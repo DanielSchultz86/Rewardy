@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'opret_familie.dart';
+import 'opret_familie_screen.dart';
 import 'profil.dart';
 import 'dashboard_screen.dart'; // Importerer det rigtige dashboard
 import '../widgets/app_drawer.dart';
@@ -67,10 +67,10 @@ class ForsideScreen extends StatelessWidget {
                 const SizedBox(height: 16),
               ],
 
-              // OPRET FAMILIE / GRUPPE
+              // OPRET FAMILIE
               _buildMenuButton(
                 icon: Icons.add_circle_outline,
-                text: 'Opret familie/gruppe',
+                text: 'Opret familie',
                 onTap: () {
                   Navigator.push(
                     context,

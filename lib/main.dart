@@ -1,8 +1,20 @@
 import 'package:flutter/material.dart';
-import 'screens/forside_screen.dart';
+import 'package:firebase_core/firebase_core.dart'; // NYT
+import 'firebase_options.dart'; // NYT
+import 'screens/forside_screen.dart'; 
+import 'screens/login_screen.dart'; // NYT
+import 'screens/opret_bruger_screen.dart'; // NYT
 
-void main() {
-  // Senere tilføjer vi initialisering af Firebase og Hive her
+// Sæt 'async' på main
+void main() async {
+  // Sikrer at Flutter er klar før vi starter Firebase
+  WidgetsFlutterBinding.ensureInitialized(); 
+  
+  // Starter Firebase med de indstillinger vi lige har downloadet
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
   runApp(const RewardyApp());
 }
 
@@ -34,7 +46,7 @@ class RewardyApp extends StatelessWidget {
         
         useMaterial3: true,
       ),
-      home: const ForsideScreen(), // Peger på vores forside
+      home: const LoginScreen(), // Peger på vores forside
     );
   }
 }

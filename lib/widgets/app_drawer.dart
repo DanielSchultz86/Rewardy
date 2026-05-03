@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../screens/dashboard_screen.dart';
-import '../screens/opret_familie.dart';
+import '../screens/opret_familie_screen.dart';
 import '../screens/profil.dart';
+import '../screens/medlemmer_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -67,6 +68,19 @@ class AppDrawer extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => const OpretFamilieScreen()),
+              );
+            },
+          ),
+
+          // 2. MEDLEMMER
+          ListTile(
+            leading: const Icon(Icons.people_alt_outlined, color: Colors.white70),
+            title: const Text('Medlemmer', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context); // Lukker menuen
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const MedlemmerScreen()),
               );
             },
           ),
