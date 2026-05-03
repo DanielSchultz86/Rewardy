@@ -1,36 +1,40 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../screens/dashboard_screen.dart';
 import '../screens/opret_familie_screen.dart';
 import '../screens/profil.dart';
 import '../screens/medlemmer_screen.dart';
+import '../screens/forside_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
 
-  // Dummy-variabel for at teste logikken.
-  // Sæt til 'false' for at skjule holdet i menuen.
-  final bool hasFamily = true;
-
   @override
   Widget build(BuildContext context) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return Drawer(
-      // Vi bruger appens mørke baggrundsfarve
       backgroundColor: const Color(0xFF202024),
       child: ListView(
-        padding: EdgeInsets.zero, // Fjerner standard padding i toppen
+        padding: EdgeInsets.zero,
         children: [
-          // HEADER: Det øverste område af menuen
-          const DrawerHeader(
-            decoration: BoxDecoration(
-              color: Color(0xFF2A2A30), // Lidt lysere end baggrunden
+          // HEADER
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2A2A30),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Icon(Icons.stars_rounded, color: Color(0xFFFFD166), size: 40), // Vores stjerne-farve
-                SizedBox(height: 10),
-                Text(
+                Image.asset(
+                  'assets/images/logo.png',
+                  height: 40,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 10),
+                const Text(
                   'Menu',
                   style: TextStyle(
                     color: Colors.white,
@@ -42,42 +46,78 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
 
-          // 0. GÅ TIL HOLD (Vises kun hvis hasFamily er true)
-          if (hasFamily) ...[
-            ListTile(
-              leading: const Icon(Icons.home_rounded, color: Colors.white70),
-              title: const Text('Gå til dit Hold', style: TextStyle(color: Colors.white)),
-              onTap: () {
-                Navigator.pop(context); // Lukker swipe-menuen ned
-                Navigator.pushReplacement( // Skifter siden ud (så man ikke får en uendelig 'tilbage' stak)
-                  context,
-                  MaterialPageRoute(builder: (context) => const DashboardScreen()),
+          // FORSIDE
+          ListTile(
+            leading: const Icon(Icons.dashboard_rounded, color: Colors.white70),
+            title: const Text('Forside', style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const ForsideScreen()),
+              );
+            },
+          ),
+          const Divider(color: Color(0xFF3F3F46)),
+
+          // DYNAMISKE FAMILIE-PUNKTER (Max 4)
+          if (currentUserId != null)
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('families')
+                  .where('createdBy', isEqualTo: currentUserId)
+                  .limit(4)
+                  .snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+
+                final families = snapshot.data!.docs;
+
+                return Column(
+                  children: [
+                    ...families.map((doc) {
+                      final familyName = doc['name'] ?? 'Ukendt familie';
+                      return ListTile(
+                        leading: const Icon(Icons.home_rounded, color: Colors.white70),
+                        title: Text(familyName, style: const TextStyle(color: Colors.white)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                          );
+                        },
+                      );
+                    }),
+                    const Divider(color: Color(0xFF3F3F46)),
+                  ],
                 );
               },
             ),
-            // En tynd streg til at adskille holdet fra de generelle ting
-            const Divider(color: Color(0xFF3F3F46)), 
-          ],
 
-          // 1. OPRET FAMILIE
+          // OPRET FAMILIE
           ListTile(
             leading: const Icon(Icons.add_circle_outline, color: Colors.white70),
-            title: const Text('Opret familie/gruppe', style: TextStyle(color: Colors.white)),
+            title: const Text('Opret familie', style: TextStyle(color: Colors.white)),
             onTap: () {
-              Navigator.pop(context); // Lukker menuen
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const OpretFamilieScreen()),
+              Navigator.pop(context);
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => const OpretFamiliePopup(),
               );
             },
           ),
 
-          // 2. MEDLEMMER
+          // MEDLEMMER
           ListTile(
             leading: const Icon(Icons.people_alt_outlined, color: Colors.white70),
             title: const Text('Medlemmer', style: TextStyle(color: Colors.white)),
             onTap: () {
-              Navigator.pop(context); // Lukker menuen
+              Navigator.pop(context);
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const MedlemmerScreen()),
@@ -85,7 +125,7 @@ class AppDrawer extends StatelessWidget {
             },
           ),
 
-          // 2. PROFIL
+          // PROFIL
           ListTile(
             leading: const Icon(Icons.person_outline, color: Colors.white70),
             title: const Text('Profil', style: TextStyle(color: Colors.white)),
@@ -99,14 +139,17 @@ class AppDrawer extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
-          const Divider(color: Color(0xFF3F3F46)), // Tynd grå streg
+          const Divider(color: Color(0xFF3F3F46)),
 
-          // 3. LOG UD (Rød styling)
+          // LOG UD
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Log ud', style: TextStyle(color: Colors.redAccent)),
-            onTap: () {
-              // TODO: Logik til log ud
+            onTap: () async {
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) {
+                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+              }
             },
           ),
         ],

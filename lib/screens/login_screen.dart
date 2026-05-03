@@ -144,11 +144,11 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 // Logo
                 Image.asset(
-                  'assets/images/logo.png',
-                  height: 100,
-                  errorBuilder: (context, error, stackTrace) => const Icon(Icons.stars_rounded, size: 80, color: Color(0xFFFFD166)),
-                ),
-                const SizedBox(height: 30),
+  'assets/images/logo.png',
+  height: 120, // Gerne lidt stort på login skærmen
+  fit: BoxFit.contain,
+),
+const SizedBox(height: 40),
                 
                 const Text('Velkommen tilbage!', textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
@@ -191,7 +191,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   height: 60,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFFF6B35), // Orange primærfarve
+                      backgroundColor: const Color(0xFF008D3D), // Orange primærfarve
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),

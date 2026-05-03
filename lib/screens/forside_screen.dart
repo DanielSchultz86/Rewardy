@@ -1,23 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:firebase_auth/firebase_auth.dart'; 
 import 'opret_familie_screen.dart';
 import 'profil.dart';
-import 'dashboard_screen.dart'; // Importerer det rigtige dashboard
+import 'dashboard_screen.dart'; 
+import 'medlemmer_screen.dart'; 
 import '../widgets/app_drawer.dart';
 
 class ForsideScreen extends StatelessWidget {
   const ForsideScreen({super.key});
 
-  // Dummy-variabel: Sæt til "true" for at teste "Gå til hold"-knappen
-  final bool hasFamily = true; 
-
   @override
   Widget build(BuildContext context) {
+    // Hent den aktuelle brugers ID
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+
     return Scaffold(
-      // 1. HER INDSÆTTER VI MENUEN
       drawer: const AppDrawer(), 
       
       appBar: AppBar(
-        // 2. DEN GAMLE 'leading' ER NU SLETTET HERFRA
         title: const Text(
           'Velkommen til Rewardy!',
           style: TextStyle(fontSize: 18),
@@ -51,30 +52,76 @@ class ForsideScreen extends StatelessWidget {
               
               const SizedBox(height: 40),
 
-              // GÅ TIL FAMILIE KNAP (Vises KUN, hvis hasFamily er true)
-              if (hasFamily) ...[
-                _buildMenuButton(
-                  icon: Icons.home_rounded,
-                  text: 'Gå til dit Hold',
-                  onTap: () {
-                    // Naviger til det rigtige dashboard!
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => const DashboardScreen()),
+              // 1. DYNAMISKE FAMILIE-KNAPPER (Nu med max 4!)
+              if (currentUserId != null)
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('families')
+                      .where('createdBy', isEqualTo: currentUserId)
+                      .limit(4) // <-- HER ER ÆNDRINGEN: Henter max 4 familier fra databasen
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    // Mens den loader data fra Firebase
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.only(bottom: 16.0),
+                        child: Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35))),
+                      );
+                    }
+                    
+                    // Hvis der er fejl, eller brugeren INGEN familier har, vis ingenting
+                    if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                      return const SizedBox.shrink(); 
+                    }
+
+                    // Hent listen af familier
+                    final families = snapshot.data!.docs;
+
+                    // Byg en knap for hver familie i databasen (max 4 bliver returneret)
+                    return Column(
+                      children: families.map((doc) {
+                        final familyName = doc['name'] ?? 'Ukendt familie';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16.0),
+                          child: _buildMenuButton(
+                            icon: Icons.home_rounded,
+                            text: familyName, 
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                              );
+                            },
+                          ),
+                        );
+                      }).toList(),
                     );
                   },
                 ),
-                const SizedBox(height: 16),
-              ],
 
               // OPRET FAMILIE
               _buildMenuButton(
                 icon: Icons.add_circle_outline,
                 text: 'Opret familie',
                 onTap: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true, 
+                    backgroundColor: Colors.transparent, 
+                    builder: (context) => const OpretFamiliePopup(),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
+
+              // MEDLEMMER
+              _buildMenuButton(
+                icon: Icons.people_alt_outlined, 
+                text: 'Medlemmer',
+                onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const OpretFamilieScreen()),
+                    MaterialPageRoute(builder: (context) => const MedlemmerScreen()),
                   );
                 },
               ),
@@ -116,7 +163,7 @@ class ForsideScreen extends StatelessWidget {
   Widget _buildMenuButton({required IconData icon, required String text, required VoidCallback onTap}) {
     return ElevatedButton(
       style: ElevatedButton.styleFrom(
-        backgroundColor: const Color(0xFF2A2A30), // Lidt lysere grå til knapperne
+        backgroundColor: const Color(0xFF2A2A30), 
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

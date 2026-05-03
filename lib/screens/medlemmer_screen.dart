@@ -36,6 +36,26 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
     });
   }
 
+  // --- NY FUNKTION: Henter familienavne ud fra deres IDs ---
+  Future<String> _getFamilyNames(List<dynamic> familyIds) async {
+    if (familyIds.isEmpty) return 'Ingen familie';
+    
+    List<String> names = [];
+    for (String id in familyIds) {
+      try {
+        final doc = await FirebaseFirestore.instance.collection('families').doc(id).get();
+        if (doc.exists && doc.data() != null) {
+          names.add(doc.data()!['name'] ?? 'Ukendt familie');
+        }
+      } catch (e) {
+        debugPrint('Kunne ikke hente familie: $e');
+      }
+    }
+    
+    if (names.isEmpty) return 'Ingen familie';
+    return 'Familie: ${names.join(' • ')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     // Hent den aktuelle brugers ID for kun at hente deres medlemmer
@@ -197,7 +217,6 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
     );
   }
 
-  // Nu tager denne widget et QueryDocumentSnapshot i stedet for DummyMember
   Widget _buildMemberTile(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     
@@ -206,10 +225,6 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
     final List<dynamic> families = data['familier'] ?? [];
     final int colorValue = data['ikonFarve'] ?? Colors.grey.value;
     final Color iconColor = Color(colorValue);
-
-    String familyText = families.isEmpty 
-        ? 'Ingen familie' 
-        : 'Familie: ${families.join(' • ')}';
 
     return InkWell(
       onTap: () {
@@ -230,11 +245,27 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
                     style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    familyText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13, color: Colors.white54),
+                  
+                  // --- RETTET HER: Bruger FutureBuilder til at oversætte ID til navn ---
+                  FutureBuilder<String>(
+                    future: _getFamilyNames(families),
+                    builder: (context, snapshot) {
+                      // Mens den henter
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Text('Henter familie...', style: TextStyle(fontSize: 13, color: Colors.white54));
+                      }
+                      // Ved fejl eller ingen data
+                      if (snapshot.hasError || !snapshot.hasData) {
+                        return const Text('Ingen familie', style: TextStyle(fontSize: 13, color: Colors.white54));
+                      }
+                      // Når data er klar
+                      return Text(
+                        snapshot.data!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13, color: Colors.white54),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -264,13 +295,11 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
                 icon: const Icon(Icons.more_vert, color: Colors.white70),
                 onSelected: (value) async {
                   if (value == 'Slet medlem') {
-                    // Sletter medlemmet direkte i Firebase!
                     await FirebaseFirestore.instance.collection('members').doc(doc.id).delete();
                     if(mounted){
                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Medlemmet blev slettet.')));
                     }
                   } else if (value == 'Rediger medlem') {
-                    // Åbn redigerings-popup
                     showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
