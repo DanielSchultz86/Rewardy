@@ -12,6 +12,11 @@
 .swiftpm/
 migrate_working_dir/
 
+# Firebase konfigurationsfiler
+lib/firebase_options.dart
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+
 # IntelliJ related
 *.iml
 *.ipr
