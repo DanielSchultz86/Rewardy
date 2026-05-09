@@ -86,7 +86,12 @@ class AppDrawer extends StatelessWidget {
                           Navigator.pop(context);
                           Navigator.pushReplacement(
                             context,
-                            MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                            MaterialPageRoute(
+  builder: (context) => DashboardScreen(
+    familyId: doc.id, // ID'et fra Firebase dokumentet
+    familyName: familyName, // Navnet fra Firebase dokumentet
+  ),
+),
                           );
                         },
                       );

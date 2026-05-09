@@ -89,7 +89,12 @@ class ForsideScreen extends StatelessWidget {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(builder: (context) => const DashboardScreen()),
+                                MaterialPageRoute(
+  builder: (context) => DashboardScreen(
+    familyId: doc.id, // ID'et fra Firebase dokumentet
+    familyName: familyName, // Navnet fra Firebase dokumentet
+  ),
+),
                               );
                             },
                           ),
