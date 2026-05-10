@@ -6,6 +6,7 @@ import '../screens/opret_familie_screen.dart';
 import '../screens/profil.dart';
 import '../screens/medlemmer_screen.dart';
 import '../screens/forside_screen.dart';
+import '../screens/login_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -146,14 +147,23 @@ class AppDrawer extends StatelessWidget {
           const SizedBox(height: 20),
           const Divider(color: Color(0xFF3F3F46)),
 
-          // LOG UD
+         // LOG UD
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Log ud', style: TextStyle(color: Colors.redAccent)),
             onTap: () async {
+              // 1. Lukker menuen
+              Navigator.pop(context); 
+              
+              // 2. Logger brugeren ud af Firebase
               await FirebaseAuth.instance.signOut();
+              
+              // 3. Fjerner hele historikken og sender brugeren til Login-skærmen
               if (context.mounted) {
-                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  (Route<dynamic> route) => false, // false betyder at "Tilbage"-knappen nulstilles
+                );
               }
             },
           ),

@@ -6,6 +6,7 @@ import 'profil.dart';
 import 'dashboard_screen.dart'; 
 import 'medlemmer_screen.dart'; 
 import '../widgets/app_drawer.dart';
+import 'login_screen.dart';
 
 class ForsideScreen extends StatelessWidget {
   const ForsideScreen({super.key});
@@ -151,8 +152,17 @@ class ForsideScreen extends StatelessWidget {
                 icon: Icons.logout,
                 text: 'Log ud',
                 color: Colors.redAccent,
-                onTap: () {
-                  // TODO: Firebase sign out
+                onTap: () async {
+                  // 1. Log ud af Firebase
+                  await FirebaseAuth.instance.signOut();
+                  
+                  // 2. Fjern alt og hop til Login-skærmen
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                      (Route<dynamic> route) => false,
+                    );
+                  }
                 },
               ),
               

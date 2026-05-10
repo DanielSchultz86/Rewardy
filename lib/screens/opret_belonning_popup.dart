@@ -3,12 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class OpretBelonningPopup extends StatefulWidget {
   final String familyId;
-  final String? rewardId; // NYT: Hvis denne er udfyldt, er vi i "Kun opgave" mode!
+  final String? rewardId;
+  final QueryDocumentSnapshot? taskDoc; // Bruges når vi skal redigere en specifik opgave
 
   const OpretBelonningPopup({
     super.key, 
     required this.familyId, 
-    this.rewardId, // NYT
+    this.rewardId, 
+    this.taskDoc,
   });
 
   @override
@@ -40,10 +42,22 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   @override
   void initState() {
     super.initState();
-    // NYT: Hvis vi har modtaget et rewardId, starter vi direkte på trin 2
-    if (widget.rewardId != null) {
+    
+    // Hop direkte til Trin 2 (Opgaver), hvis vi har et rewardId eller taskDoc
+    if (widget.rewardId != null || widget.taskDoc != null) {
       _currentStep = 2;
     }
+
+    // Hvis vi er i REDIGER mode, så udfyld felterne automatisk
+    if (widget.taskDoc != null) {
+      final data = widget.taskDoc!.data() as Map<String, dynamic>;
+      _taskNameCtrl.text = data['navn'] ?? '';
+      _taskDescCtrl.text = data['beskrivelse'] ?? '';
+      _isMandatory = data['erMandatory'] ?? false;
+      _taskRepetitions = data['antalGange'] ?? 1;
+      _selectedMembers = [data['medlemId']]; // Marker det medlem som opgaven allerede tilhører
+    }
+
     _fetchMembers();
   }
 
@@ -111,6 +125,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     return shouldPop ?? false;
   }
 
+  // Den kloge database-funktion
   Future<void> _saveToDatabase() async {
     if (!_taskFormKey.currentState!.validate()) return;
     if (_selectedMembers.isEmpty) {
@@ -126,34 +141,74 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
 
-      DocumentReference rewardRef;
+      // SCENARIE 1: Vi redigerer en eksisterende opgave
+      if (widget.taskDoc != null) {
+        final originalMemberId = widget.taskDoc!['medlemId'];
+        final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
 
-      // NYT: Tjekker om vi skal oprette en ny belønning, eller bruge den eksisterende
-      if (widget.rewardId == null) {
-        // Vi opretter en helt ny belønning
-        rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
+        // A) Opdater den originale opgave med ny tekst og tal
+        batch.update(widget.taskDoc!.reference, {
+          'navn': _taskNameCtrl.text.trim(),
+          'beskrivelse': _taskDescCtrl.text.trim(),
+          'erMandatory': _isMandatory,
+          'antalGange': _taskRepetitions,
+        });
+
+        // B) Hvis brugeren har valgt *nye* medlemmer udover det oprindelige, opretter vi en kopi til dem
+        for (String memberId in _selectedMembers) {
+          if (memberId != originalMemberId) {
+            final newTaskRef = rewardRef.collection('tasks').doc();
+            batch.set(newTaskRef, {
+              'navn': _taskNameCtrl.text.trim(),
+              'beskrivelse': _taskDescCtrl.text.trim(),
+              'erMandatory': _isMandatory,
+              'antalGange': _taskRepetitions,
+              'udfoertGange': 0,
+              'medlemId': memberId,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+        }
+      } 
+      // SCENARIE 2: Vi tilføjer opgaver til en eksisterende belønning
+      else if (widget.rewardId != null) {
+        final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
+        
+        for (String memberId in _selectedMembers) {
+          final taskRef = rewardRef.collection('tasks').doc();
+          batch.set(taskRef, {
+            'navn': _taskNameCtrl.text.trim(),
+            'beskrivelse': _taskDescCtrl.text.trim(),
+            'erMandatory': _isMandatory,
+            'antalGange': _taskRepetitions,
+            'udfoertGange': 0,
+            'medlemId': memberId,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } 
+      // SCENARIE 3: Vi opretter en helt ny belønning OG opgaver
+      else {
+        final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
         batch.set(rewardRef, {
           'navn': _rewardNameCtrl.text.trim(),
           'beskrivelse': _rewardDescCtrl.text.trim(),
           'fuldfoertKriterie': _completionCriteria,
           'createdAt': FieldValue.serverTimestamp(),
         });
-      } else {
-        // Vi tilføjer blot til en eksisterende belønning
-        rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
-      }
 
-      for (String memberId in _selectedMembers) {
-        final taskRef = rewardRef.collection('tasks').doc();
-        batch.set(taskRef, {
-          'navn': _taskNameCtrl.text.trim(),
-          'beskrivelse': _taskDescCtrl.text.trim(),
-          'erMandatory': _isMandatory,
-          'antalGange': _taskRepetitions,
-          'udfoertGange': 0,
-          'medlemId': memberId,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
+        for (String memberId in _selectedMembers) {
+          final taskRef = rewardRef.collection('tasks').doc();
+          batch.set(taskRef, {
+            'navn': _taskNameCtrl.text.trim(),
+            'beskrivelse': _taskDescCtrl.text.trim(),
+            'erMandatory': _isMandatory,
+            'antalGange': _taskRepetitions,
+            'udfoertGange': 0,
+            'medlemId': memberId,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
       }
 
       await batch.commit();
@@ -162,7 +217,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         Navigator.of(context).pop();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.rewardId == null ? 'Belønning oprettet!' : 'Opgave tilføjet!'), 
+            content: Text(widget.taskDoc != null ? 'Opgaven er opdateret!' : 'Oprettet med succes!'), 
             backgroundColor: const Color(0xFF008D3D)
           ),
         );
@@ -209,15 +264,15 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      // NYT: Titlen skifter baseret på mode
-                      widget.rewardId != null 
-                        ? 'Opret opgave' 
-                        : (_currentStep == 1 ? 'Opret belønning' : 'Tilføj opgaver'),
+                      // Dynamisk titel baseret på hvor vi er
+                      widget.taskDoc != null 
+                        ? 'Ret opgave' 
+                        : (widget.rewardId != null ? 'Opret opgave' : (_currentStep == 1 ? 'Opret belønning' : 'Tilføj opgaver')),
                       style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                   ),
-                  // NYT: Skjuler tilbage-knappen, hvis vi er i "Kun opgave" mode
-                  if (_currentStep == 2 && widget.rewardId == null)
+                  // Tilbageknap skjules i redigerings mode
+                  if (_currentStep == 2 && widget.rewardId == null && widget.taskDoc == null)
                     IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFFFF6B35)),
                       onPressed: () => setState(() => _currentStep = 1),
@@ -253,10 +308,10 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                   child: _isSaving
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          // NYT: Teksten på knappen skifter baseret på mode
-                          widget.rewardId != null 
-                            ? 'Opret opgave' 
-                            : (_currentStep == 1 ? 'Tilføj opgaver' : 'Opret belønning'),
+                          // Dynamisk knap-tekst baseret på mode
+                          widget.taskDoc != null 
+                            ? 'Gem ændringer' 
+                            : (widget.rewardId != null ? 'Opret opgave' : (_currentStep == 1 ? 'Tilføj opgaver' : 'Opret belønning')),
                           style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                 ),
