@@ -19,8 +19,31 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  String selectedMember = 'Alle';
+  // RETTET: Vi gemmer nu ID i stedet for navn for at kunne filtrere præcist i databasen
+  String selectedMemberId = 'Alle'; 
   int _currentTab = 0; // 0 = Igangværende, 1 = Opnåede
+
+  // --- CACHE TIL STREAMS (Løser problemet med at skærmen blinker) ---
+  late Stream<QuerySnapshot> _rewardsStream;
+  late Stream<QuerySnapshot> _membersStream;
+  final Map<String, Stream<QuerySnapshot>> _taskStreams = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Vi starter disse streams én gang, så de ikke reloader og blinker ved hvert klik
+    _rewardsStream = FirebaseFirestore.instance
+        .collection('families')
+        .doc(widget.familyId)
+        .collection('rewards')
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    _membersStream = FirebaseFirestore.instance
+        .collection('members')
+        .where('familier', arrayContains: widget.familyId)
+        .snapshots();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,7 +61,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      // NYT: Fast bundmenu med de to tabs
       bottomNavigationBar: _buildBottomTabs(),
       body: Stack(
         children: [
@@ -46,7 +68,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             children: [
               _buildMemberFilter(),
               
-              // Hvis vi er på "Opnåede", viser vi en lille overskrift
               if (_currentTab == 1)
                 const Padding(
                   padding: EdgeInsets.only(top: 10, bottom: 5),
@@ -55,14 +76,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               Expanded(
                 child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('families')
-                      .doc(widget.familyId)
-                      .collection('rewards')
-                      .orderBy('createdAt', descending: true)
-                      .snapshots(),
+                  stream: _rewardsStream, // Bruger vores cachede stream
                   builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
+                    if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)));
                     }
 
@@ -73,7 +89,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     final rewardDocs = snapshot.data!.docs;
 
                     return ListView.builder(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                       itemCount: rewardDocs.length,
                       itemBuilder: (context, index) {
                         return _buildRewardBox(rewardDocs[index]);
@@ -85,7 +101,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
           
-          // STOR ORANGE KNAP (Skjules på "Opnåede" fanen)
           if (_currentTab == 0)
             Positioned(
               bottom: 30,
@@ -104,79 +119,86 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // --- WIDGETS ---
 
-  // NYT: Designet til bundmenuen
   Widget _buildBottomTabs() {
     return Container(
-      height: 70,
       decoration: const BoxDecoration(
         color: Color(0xFF1A1A1E),
         border: Border(top: BorderSide(color: Color(0xFF3F3F46))),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _currentTab = 0),
-              child: Container(
-                color: _currentTab == 0 ? const Color(0xFFCC5225) : Colors.transparent, // Mørkere orange hvis aktiv
-                alignment: Alignment.center,
-                child: Text(
-                  'Igangværende', 
-                  style: TextStyle(color: _currentTab == 0 ? Colors.white : Colors.white54, fontSize: 16, fontWeight: FontWeight.bold)
+      child: SafeArea( // <-- Sikrer at indholdet bliver skubbet OP over systemknapperne
+        child: SizedBox(
+          height: 60, // Nedsat lidt, da SafeArea automatisk lægger plads til i bunden
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _currentTab = 0),
+                  child: Container(
+                    color: _currentTab == 0 ? const Color(0xFFCC5225) : Colors.transparent,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Igangværende', 
+                      style: TextStyle(color: _currentTab == 0 ? Colors.white : Colors.white54, fontSize: 16, fontWeight: FontWeight.bold)
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _currentTab = 1),
-              child: Container(
-                color: _currentTab == 1 ? const Color(0xFFCC5225) : Colors.transparent, // Mørkere orange hvis aktiv
-                alignment: Alignment.center,
-                child: Text(
-                  'Opnåede', 
-                  style: TextStyle(color: _currentTab == 1 ? Colors.white : Colors.white54, fontSize: 16, fontWeight: FontWeight.bold)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _currentTab = 1),
+                  child: Container(
+                    color: _currentTab == 1 ? const Color(0xFFCC5225) : Colors.transparent,
+                    alignment: Alignment.center,
+                    child: Text(
+                      'Opnåede', 
+                      style: TextStyle(color: _currentTab == 1 ? Colors.white : Colors.white54, fontSize: 16, fontWeight: FontWeight.bold)
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildMemberFilter() {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('members')
-          .where('familier', arrayContains: widget.familyId)
-          .snapshots(),
+      stream: _membersStream, // Bruger vores cachede stream
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
           return const SizedBox(height: 60, child: Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35))));
         }
-        List<String> memberNames = ['Alle'];
+        
+        // Vi gemmer både ID og Navn, så vi kan filtrere præcist
+        List<Map<String, String>> memberList = [{'id': 'Alle', 'navn': 'Alle'}];
         if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
           for (var doc in snapshot.data!.docs) {
-            memberNames.add((doc['navn'] as String).split(' ')[0]);
+            memberList.add({
+              'id': doc.id,
+              'navn': (doc['navn'] as String).split(' ')[0]
+            });
           }
         }
+
         return Container(
           height: 60,
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: memberNames.length,
+            itemCount: memberList.length,
             itemBuilder: (context, index) {
-              final name = memberNames[index];
-              final isSelected = selectedMember == name;
+              final member = memberList[index];
+              final isSelected = selectedMemberId == member['id']; // Tjekker på ID i stedet for navn
+              
               return Padding(
                 padding: const EdgeInsets.only(right: 10),
                 child: ChoiceChip(
-                  label: Text(name),
+                  label: Text(member['navn']!),
                   selected: isSelected,
-                  onSelected: (val) => setState(() => selectedMember = name),
+                  onSelected: (val) => setState(() => selectedMemberId = member['id']!), // Opdaterer state med valgt ID
                   selectedColor: const Color(0xFFFF6B35),
                   backgroundColor: const Color(0xFF2A2A30),
                   labelStyle: TextStyle(color: isSelected ? Colors.white : Colors.white60),
@@ -196,15 +218,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final String title = rewardData['navn'] ?? 'Ingen titel';
     final double criteria = (rewardData['fuldfoertKriterie'] ?? 50.0).toDouble();
 
+    // Hent eller opret en cachet opgave-stream for denne specifikke belønning (Undgår blink)
+    if (!_taskStreams.containsKey(rewardDoc.id)) {
+      _taskStreams[rewardDoc.id] = rewardDoc.reference.collection('tasks').snapshots();
+    }
+
     return StreamBuilder<QuerySnapshot>(
-      stream: rewardDoc.reference.collection('tasks').snapshots(),
+      stream: _taskStreams[rewardDoc.id],
       builder: (context, taskSnapshot) {
-        // --- LOGIK TIL BEREGNING AF FULDFØRELSE ---
+        if (!taskSnapshot.hasData) return const SizedBox.shrink(); // Vent til vi har data uden at flashe
+
+        final allTasks = taskSnapshot.data!.docs;
+
+        // --- BEREGNING AF PROCENT (Regnes ALTID ud fra alle opgaver) ---
         double progress = 0.0;
-        if (taskSnapshot.hasData && taskSnapshot.data!.docs.isNotEmpty) {
+        if (allTasks.isNotEmpty) {
           double totalStars = 0;
           double earnedStars = 0;
-          for (var doc in taskSnapshot.data!.docs) {
+          for (var doc in allTasks) {
             totalStars += (doc['antalGange'] ?? 1);
             earnedStars += (doc['udfoertGange'] ?? 0);
           }
@@ -213,14 +244,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
         final bool isCompleted = (progress * 100) >= criteria;
 
-        // --- FILTRERING BASERET PÅ AKTIV TAB ---
-        if (_currentTab == 0 && isCompleted) return const SizedBox.shrink(); // Skjul på Igangværende
-        if (_currentTab == 1 && !isCompleted) return const SizedBox.shrink(); // Skjul på Opnåede
+        if (_currentTab == 0 && isCompleted) return const SizedBox.shrink(); 
+        if (_currentTab == 1 && !isCompleted) return const SizedBox.shrink(); 
+
+        // --- NYT: FILTRER OPGAVER EFTER VALGT MEDLEM ---
+        final filteredTasks = selectedMemberId == 'Alle' 
+            ? allTasks 
+            : allTasks.where((t) => t['medlemId'] == selectedMemberId).toList();
+
+        // MAGIEN: Hvis et bestemt medlem er valgt, og de INGEN opgaver har her, skjul hele belønningen!
+        if (selectedMemberId != 'Alle' && filteredTasks.isEmpty) {
+          return const SizedBox.shrink();
+        }
 
         return Container(
           margin: const EdgeInsets.only(bottom: 24),
           decoration: BoxDecoration(
-            border: Border.all(color: isCompleted ? const Color(0xFF008D3D) : const Color(0xFF3F3F46)), // Grøn border hvis udført
+            border: Border.all(color: isCompleted ? const Color(0xFF008D3D) : const Color(0xFF3F3F46)),
             borderRadius: BorderRadius.circular(16),
             color: const Color(0xFF1A1A1E),
           ),
@@ -230,8 +270,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
                   children: [
-                    Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                    const Spacer(),
+                    Expanded(
+  child: Text(
+    title, 
+    maxLines: 1,
+    overflow: TextOverflow.ellipsis, // Tilføjer "..."
+    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+  ),
+),
+const SizedBox(width: 8), // Giver lidt luft før Info-ikonet
                     GestureDetector(
                       onTap: () => _showRewardInfoPopup(rewardDoc),
                       child: const Icon(Icons.info_outline, color: Colors.white54, size: 20),
@@ -245,13 +292,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           size: const Size(20, 20),
                           painter: TriangleProgressPainter(
                             progress: progress,
-                            fillColor: isCompleted ? const Color(0xFF008D3D) : const Color(0xFFFF6B35), // Bliver grøn når færdig
+                            fillColor: isCompleted ? const Color(0xFF008D3D) : const Color(0xFFFF6B35),
                           ),
                         ),
                       ],
                     ),
                     
-                    // NYT: Plus-knappen skjules hvis vi er på "Opnåede" fanen
                     if (_currentTab == 0) ...[
                       const SizedBox(width: 16),
                       GestureDetector(
@@ -263,7 +309,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                     ] else ...[
-                      // Lidt luft i stedet for knappen
                       const SizedBox(width: 16),
                     ]
                   ],
@@ -271,12 +316,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
               const Divider(color: Color(0xFF3F3F46), height: 1),
               
-              if (!taskSnapshot.hasData || taskSnapshot.data!.docs.isEmpty)
+              if (filteredTasks.isEmpty)
                 const Padding(padding: EdgeInsets.all(16.0), child: Text('Ingen opgaver endnu', style: TextStyle(color: Colors.white24)))
               else
                 Column(
-                  children: List.generate(taskSnapshot.data!.docs.length, (index) {
-                    return _buildTaskItem(taskSnapshot.data!.docs[index], rewardDoc, isLast: index == taskSnapshot.data!.docs.length - 1);
+                  children: List.generate(filteredTasks.length, (index) {
+                    return _buildTaskItem(filteredTasks[index], rewardDoc, isLast: index == filteredTasks.length - 1);
                   }),
                 ),
             ],
@@ -307,7 +352,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: const TextStyle(color: Colors.white, fontSize: 15)),
+                      Text(
+  name, 
+  maxLines: 1, 
+  overflow: TextOverflow.ellipsis, // Tilføjer "..." 
+  style: const TextStyle(color: Colors.white, fontSize: 15)
+),
                       const SizedBox(height: 4),
                       Text(desc, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
                     ],
@@ -385,10 +435,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- POPUPS & NAVIGERING ---
+  // --- POPUPS MED "RET INFO" OG "SLET" FUNKTIONER FRA FORRIGE SKRIDT ---
 
   void _showRewardInfoPopup(QueryDocumentSnapshot doc) {
-    // TODO: Senere kan vi skjule redigeringsknapperne, hvis currentUser ikke er Admin.
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -404,21 +453,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ],
         ),
         actions: [
-          // SLET KNAP
           TextButton(
             onPressed: () => _deleteReward(doc),
             child: const Text('Slet belønning', style: TextStyle(color: Colors.redAccent)),
           ),
-          // LUK KNAP
           TextButton(
             onPressed: () => Navigator.pop(context), 
             child: const Text('Luk', style: TextStyle(color: Colors.white54))
           ),
-          // RET INFO KNAP
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Lukker info boksen
-              _showEditRewardPopup(doc); // Åbner redigerings boksen
+              Navigator.pop(context);
+              _showEditRewardPopup(doc);
             }, 
             child: const Text('Ret info', style: TextStyle(color: Color(0xFFFF6B35)))
           ),
@@ -427,9 +473,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- NY FUNKTION: Slet Belønning og dens opgaver ---
   Future<void> _deleteReward(QueryDocumentSnapshot rewardDoc) async {
-    // 1. Bed om bekræftelse først
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -443,30 +487,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       ),
     );
 
-    if (confirm != true) return; // Hvis brugeren trykkede Annuller
+    if (confirm != true) return;
+    if (context.mounted) Navigator.pop(context);
 
-    if (context.mounted) Navigator.pop(context); // Lukker info popuppen
-
-    // 2. Vi bruger en "Batch" til at slette det hele på én gang
     final batch = FirebaseFirestore.instance.batch();
-    
-    // Hent alle opgaver knyttet til belønningen
     final tasksSnap = await rewardDoc.reference.collection('tasks').get();
     for (var doc in tasksSnap.docs) {
-      batch.delete(doc.reference); // Slet opgaven
+      batch.delete(doc.reference);
     }
-    
-    // Slet selve belønningen
     batch.delete(rewardDoc.reference);
-    
-    // Udfør sletningen i databasen
     await batch.commit();
   }
 
-  // --- NY FUNKTION: Rediger Belønning ---
   void _showEditRewardPopup(QueryDocumentSnapshot rewardDoc) {
     final formKey = GlobalKey<FormState>();
-    // Vi pre-udfylder tekstfelterne med den eksisterende data
     final nameCtrl = TextEditingController(text: rewardDoc['navn']);
     final descCtrl = TextEditingController(text: rewardDoc['beskrivelse']);
     double completionCriteria = (rewardDoc['fuldfoertKriterie'] ?? 50.0).toDouble();
@@ -474,10 +508,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Lader den rykke op, når tastaturet åbnes
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        // StatefulBuilder gør at vi kan opdatere slideren live inde i popuppen
         return StatefulBuilder(
           builder: (context, setState) {
             return Container(
@@ -485,9 +518,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 color: Color(0xFF202024),
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom, // Plads til tastatur
-              ),
+              padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: Form(
@@ -504,7 +535,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      
                       const Text('Belønnings navn', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -516,7 +546,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         validator: (v) => v!.trim().isEmpty ? 'Feltet må ikke være tomt' : null,
                       ),
-                      
                       const SizedBox(height: 24),
                       const Text('Beskrivelse', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
@@ -530,7 +559,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         validator: (v) => v!.trim().isEmpty ? 'Feltet må ikke være tomt' : null,
                       ),
-                      
                       const SizedBox(height: 24),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -551,7 +579,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           onChanged: (val) => setState(() => completionCriteria = val),
                         ),
                       ),
-                      
                       const SizedBox(height: 32),
                       SizedBox(
                         width: double.infinity,
@@ -565,14 +592,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             if (!formKey.currentState!.validate()) return;
                             setState(() => isSaving = true);
                             
-                            // Opdaterer data i Firestore
                             await rewardDoc.reference.update({
                               'navn': nameCtrl.text.trim(),
                               'beskrivelse': descCtrl.text.trim(),
                               'fuldfoertKriterie': completionCriteria,
                             });
                             
-                            if (context.mounted) Navigator.pop(context); // Lukker popuppen
+                            if (context.mounted) Navigator.pop(context);
                           },
                           child: isSaving 
                             ? const CircularProgressIndicator(color: Colors.white) 
@@ -598,8 +624,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => OpretBelonningPopup(
         familyId: widget.familyId,
-        rewardId: taskDoc.reference.parent.parent!.id, // Finder rewardId via stien i Firebase
-        taskDoc: taskDoc, // Sender selve opgaven med til redigering
+        rewardId: taskDoc.reference.parent.parent!.id,
+        taskDoc: taskDoc,
       ),
     );
   }
@@ -655,7 +681,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
 class TriangleProgressPainter extends CustomPainter {
   final double progress;
-  final Color fillColor; // Tilføjet så vi kan gøre den grøn når udført
+  final Color fillColor;
 
   TriangleProgressPainter({required this.progress, required this.fillColor});
 

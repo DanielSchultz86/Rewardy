@@ -87,19 +87,17 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     }
   }
 
-  // --- VALIDERINGER ---
+// --- VALIDERINGER ---
   String? _validateNavn(String? value, int maxLength) {
     if (value == null || value.trim().isEmpty) return 'Feltet må ikke være tomt';
-    if (value.length > maxLength) return 'Maks $maxLength tegn';
-    if (value.endsWith(' ')) return 'Må ikke slutte med mellemrum';
-    if (!RegExp(r'^[a-zA-ZæøåÆØÅ0-9 ]+$').hasMatch(value)) return 'Kun bogstaver og tal er tilladt her';
+    if (value.trim().length > maxLength) return 'Maks $maxLength tegn';
+    if (!RegExp(r'^[a-zA-ZæøåÆØÅ0-9 ]+$').hasMatch(value.trim())) return 'Kun bogstaver og tal er tilladt her';
     return null;
   }
 
   String? _validateBeskrivelse(String? value, int maxLength) {
     if (value == null || value.trim().isEmpty) return 'Beskrivelsen må ikke være tom';
-    if (value.length > maxLength) return 'Beskrivelsen er for lang (Maks $maxLength tegn)';
-    if (value.endsWith(' ')) return 'Beskrivelsen må ikke slutte med et mellemrum';
+    if (value.trim().length > maxLength) return 'Beskrivelsen er for lang (Maks $maxLength tegn)';
     return null;
   }
 
@@ -330,11 +328,11 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildLabel('Belønnings navn'),
-          _buildTextField(_rewardNameCtrl, 'Giv din belønning et navn..', (v) => _validateNavn(v, 30)),
+          _buildTextField(_rewardNameCtrl, 'Giv din belønning et navn..', (v) => _validateNavn(v, 50)),
           
           const SizedBox(height: 24),
           _buildLabel('Beskrivelse'),
-          _buildTextField(_rewardDescCtrl, 'Hvad får man for at løse opgaverne?', (v) => _validateBeskrivelse(v, 60), maxLines: 3),
+          _buildTextField(_rewardDescCtrl, 'Hvad får man for at løse opgaverne?', (v) => _validateBeskrivelse(v, 100), maxLines: 3),
           
           const SizedBox(height: 32),
           Row(
@@ -391,11 +389,11 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildLabel('Opgave overskrift'),
-          _buildTextField(_taskNameCtrl, 'F.eks. Tøm opvaskemaskinen', (v) => _validateNavn(v, 20)),
+          _buildTextField(_taskNameCtrl, 'F.eks. Tøm opvaskemaskinen', (v) => _validateNavn(v, 50)),
           
           const SizedBox(height: 24),
           _buildLabel('Beskrivelse'),
-          _buildTextField(_taskDescCtrl, 'Hvad skal der præcis gøres?', (v) => _validateBeskrivelse(v, 50), maxLines: 2),
+          _buildTextField(_taskDescCtrl, 'Hvad skal der præcis gøres?', (v) => _validateBeskrivelse(v, 100), maxLines: 2),
           
           const SizedBox(height: 24),
           Row(
@@ -434,7 +432,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                     IconButton(
                       icon: const Icon(Icons.add, color: Colors.black),
                       onPressed: () {
-                        if (_taskRepetitions < 50) setState(() => _taskRepetitions++);
+                        if (_taskRepetitions < 7) setState(() => _taskRepetitions++);
                       },
                     ),
                   ],
