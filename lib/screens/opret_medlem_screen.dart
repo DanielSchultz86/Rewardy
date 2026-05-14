@@ -15,9 +15,11 @@ class OpretMedlemPopup extends StatefulWidget {
 class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _navnController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController(); // NYT: Controller til password
   
   late String _unikKode;
   bool _isLoading = false;
+  bool _obscurePassword = true; // NYT: Styrer om passwordet er skjult
 
   final List<Map<String, dynamic>> _farveMuligheder = [
     {'navn': 'Orange (Standard)', 'farve': const Color(0xFFFF6B35)},
@@ -72,6 +74,7 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
         'id': docRef.id,
         'navn': _navnController.text.trim(),
         'loginKode': _unikKode,
+        'password': _passwordController.text.trim(), // NYT: Gemmer det indtastede password
         'ikonFarve': _valgtFarve.value, 
         'familier': [], 
         'rewardsEarned': 0,
@@ -104,6 +107,7 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
   @override
   void dispose() {
     _navnController.dispose();
+    _passwordController.dispose(); // NYT: Ryd op efter controlleren
     super.dispose();
   }
 
@@ -113,10 +117,10 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     
     return Container(
-      // Popuppen fylder 85% af skærmens højde + evt. plads til tastaturet
-      height: MediaQuery.of(context).size.height * 0.85,
+      // Sat en anelse op i højden, ligesom i rediger_medlem, for at gøre plads til det ekstra felt
+      height: MediaQuery.of(context).size.height * 0.90,
       decoration: const BoxDecoration(
-        color: Color(0xFF202024), // Din mørke baggrundsfarve
+        color: Color(0xFF202024), 
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Padding(
@@ -233,6 +237,39 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
                           if (nyFarve != null) {
                             setState(() => _valgtFarve = nyFarve);
                           }
+                        },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // NYT: PASSWORD FELT MED ØJE-IKON
+                      const Text('Password (Til login)', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword,
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Mindst 6 tegn', 
+                          hintStyle: const TextStyle(color: Colors.white24),
+                          filled: true, 
+                          fillColor: const Color(0xFF2A2A30),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.white54,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Password må ikke være tomt';
+                          if (v.trim().length < 6) return 'Password skal være mindst 6 tegn';
+                          return null;
                         },
                       ),
                       const SizedBox(height: 20),

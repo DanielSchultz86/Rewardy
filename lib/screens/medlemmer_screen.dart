@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/app_drawer.dart';
-import 'opret_medlem_screen.dart';
+import 'opret_medlem_screen.dart'; // Husk at det evt. hedder opret_medlem_popup.dart hos dig
 import 'rediger_medlem_popup.dart';
 
 class MedlemmerScreen extends StatefulWidget {
@@ -13,30 +13,8 @@ class MedlemmerScreen extends StatefulWidget {
 }
 
 class _MedlemmerScreenState extends State<MedlemmerScreen> {
-  // Holder styr på valgte filtre (Navne). Starter med "Alle".
-  final List<String> _selectedFilters = ['Alle'];
 
-  // Logik til at vælge/fravælge filtre
-  void _toggleFilter(String filterName) {
-    setState(() {
-      if (filterName == 'Alle') {
-        _selectedFilters.clear();
-        _selectedFilters.add('Alle');
-      } else {
-        _selectedFilters.remove('Alle');
-        if (_selectedFilters.contains(filterName)) {
-          _selectedFilters.remove(filterName);
-          if (_selectedFilters.isEmpty) {
-            _selectedFilters.add('Alle'); 
-          }
-        } else {
-          _selectedFilters.add(filterName);
-        }
-      }
-    });
-  }
-
-  // --- NY FUNKTION: Henter familienavne ud fra deres IDs ---
+  // --- FUNKTION: Henter familienavne ud fra deres IDs ---
   Future<String> _getFamilyNames(List<dynamic> familyIds) async {
     if (familyIds.isEmpty) return 'Ingen familie';
     
@@ -58,7 +36,6 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Hent den aktuelle brugers ID for kun at hente deres medlemmer
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
@@ -73,9 +50,9 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
               onPressed: () {
                 showModalBottomSheet(
                   context: context,
-                  isScrollControlled: true, // VIGTIG: Tillader at popuppen fylder næsten hele skærmen
-                  backgroundColor: Colors.transparent, // Gør toppen af popuppen gennemsigtig så runderne virker
-                  builder: (context) => const OpretMedlemPopup(), // Bemærk at vi nu kalder "Popup" widgetten
+                  isScrollControlled: true, 
+                  backgroundColor: Colors.transparent, 
+                  builder: (context) => const OpretMedlemPopup(),
                 );
               },
             ),
@@ -85,77 +62,40 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
       body: currentUserId == null 
         ? const Center(child: Text("Du er ikke logget ind.", style: TextStyle(color: Colors.white)))
         : StreamBuilder<QuerySnapshot>(
-            // Vi lytter KUN til medlemmer, som denne admin har oprettet
             stream: FirebaseFirestore.instance
                 .collection('members')
                 .where('oprettetAf', isEqualTo: currentUserId)
                 .snapshots(),
             builder: (context, snapshot) {
               
-              // 1. Venter på data (Loading)
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)));
               }
 
-              // 2. Fejlhåndtering
               if (snapshot.hasError) {
                 return Center(child: Text('Noget gik galt: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)));
               }
 
-              // 3. Konverter dokumenter til en liste af Map
               final docs = snapshot.data?.docs ?? [];
               
               if (docs.isEmpty) {
                 return _buildEmptyState();
               }
 
-              // 4. Filtreringslogik
-              final filteredDocs = _selectedFilters.contains('Alle')
-                  ? docs
-                  : docs.where((doc) {
-                      final name = doc['navn'] as String;
-                      return _selectedFilters.any((filter) => name.startsWith(filter));
-                    }).toList();
-
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 16),
                   
-                  // FILTER SEKTION
-                  SizedBox(
-                    height: 40,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      children: [
-                        _buildFilterChip('Alle'),
-                        ...docs.map((doc) {
-                          String shortName = (doc['navn'] as String).split(' ')[0];
-                          if (shortName.length > 8) {
-                            shortName = '${shortName.substring(0, 8)}..';
-                          }
-                          return _buildFilterChip(shortName);
-                        }),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-                  const Divider(color: Color(0xFF3F3F46), height: 1, thickness: 1),
-
-                  // LISTE MED MEDLEMMER
+                  // LISTE MED MEDLEMMER (Filter fjernet)
                   Expanded(
-                    child: filteredDocs.isEmpty
-                      ? const Center(child: Text("Ingen medlemmer matcher filtret.", style: TextStyle(color: Colors.white54)))
-                      : ListView.separated(
-                          itemCount: filteredDocs.length,
-                          separatorBuilder: (context, index) => const Divider(color: Color(0xFF3F3F46), height: 1, thickness: 1),
-                          itemBuilder: (context, index) {
-                            // Byg en række for hvert dokument
-                            return _buildMemberTile(filteredDocs[index]);
-                          },
-                        ),
+                    child: ListView.separated(
+                      itemCount: docs.length,
+                      separatorBuilder: (context, index) => const Divider(color: Color(0xFF3F3F46), height: 1, thickness: 1),
+                      itemBuilder: (context, index) {
+                        return _buildMemberTile(docs[index]);
+                      },
+                    ),
                   ),
                 ],
               );
@@ -191,44 +131,23 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
     );
   }
 
-  Widget _buildFilterChip(String label) {
-    final isSelected = _selectedFilters.contains(label);
-    return GestureDetector(
-      onTap: () => _toggleFilter(label),
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFF6B35) : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFFFF6B35) : const Color(0xFF3F3F46),
-          ),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.white : Colors.white70,
-            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _buildMemberTile(QueryDocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     
-    // Udpak data sikkert
     final String name = data['navn'] ?? 'Ukendt navn';
     final List<dynamic> families = data['familier'] ?? [];
     final int colorValue = data['ikonFarve'] ?? Colors.grey.value;
     final Color iconColor = Color(colorValue);
 
     return InkWell(
+      // NYT: Hele rækken åbner nu redigerings popuppen!
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Åbner profil for $name')));
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (context) => RedigerMedlemPopup(memberDoc: doc),
+        );
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
@@ -246,19 +165,15 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
                   ),
                   const SizedBox(height: 6),
                   
-                  // --- RETTET HER: Bruger FutureBuilder til at oversætte ID til navn ---
                   FutureBuilder<String>(
                     future: _getFamilyNames(families),
                     builder: (context, snapshot) {
-                      // Mens den henter
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Text('Henter familie...', style: TextStyle(fontSize: 13, color: Colors.white54));
                       }
-                      // Ved fejl eller ingen data
                       if (snapshot.hasError || !snapshot.hasData) {
                         return const Text('Ingen familie', style: TextStyle(fontSize: 13, color: Colors.white54));
                       }
-                      // Når data er klar
                       return Text(
                         snapshot.data!,
                         maxLines: 1,
@@ -270,9 +185,7 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
                 ],
               ),
             ),
-            
             const SizedBox(width: 16),
-            
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
@@ -281,46 +194,9 @@ class _MedlemmerScreenState extends State<MedlemmerScreen> {
               ),
               child: Icon(Icons.person_outline, color: iconColor, size: 24),
             ),
-            
             const SizedBox(width: 8),
-
-            Theme(
-              data: Theme.of(context).copyWith(
-                popupMenuTheme: PopupMenuThemeData(
-                  color: const Color(0xFF2A2A30),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              child: PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white70),
-                onSelected: (value) async {
-                  if (value == 'Slet medlem') {
-                    await FirebaseFirestore.instance.collection('members').doc(doc.id).delete();
-                    if(mounted){
-                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Medlemmet blev slettet.')));
-                    }
-                  } else if (value == 'Rediger medlem') {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => RedigerMedlemPopup(memberDoc: doc),
-                    );
-                  }
-                },
-                itemBuilder: (BuildContext context) => [
-                  const PopupMenuItem(
-                    value: 'Rediger medlem',
-                    child: Text('Rediger medlem', style: TextStyle(color: Colors.white)),
-                  ),
-                  const PopupMenuDivider(height: 1),
-                  const PopupMenuItem(
-                    value: 'Slet medlem',
-                    child: Text('Slet medlem', style: TextStyle(color: Colors.redAccent)),
-                  ),
-                ],
-              ),
-            ),
+            // NYT: De tre prikker er fjernet herfra!
+            const Icon(Icons.arrow_forward_ios, color: Colors.white24, size: 16),
           ],
         ),
       ),

@@ -13,8 +13,11 @@ class RedigerMedlemPopup extends StatefulWidget {
 class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _navnController;
+  late TextEditingController _passwordController; 
   late String _unikKode;
+  
   bool _isLoading = false;
+  bool _obscurePassword = true; // NYT: Styrer om passwordet er skjult eller synligt
 
   final List<Map<String, dynamic>> _farveMuligheder = [
     {'navn': 'Orange (Standard)', 'farve': const Color(0xFFFF6B35)},
@@ -36,7 +39,8 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
     super.initState();
     final data = widget.memberDoc.data() as Map<String, dynamic>;
     _navnController = TextEditingController(text: data['navn'] ?? '');
-    _unikKode = data['loginKode'] ?? 'FEJL';
+    _passwordController = TextEditingController(text: data['password'] ?? ''); 
+    _unikKode = data['unikKode'] ?? data['loginKode'] ?? 'FEJL'; 
     
     // Find den rigtige farve fra listen
     final int colorValue = data['ikonFarve'] ?? Colors.grey.value;
@@ -65,6 +69,7 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
     try {
       await FirebaseFirestore.instance.collection('members').doc(widget.memberDoc.id).update({
         'navn': _navnController.text.trim(),
+        'password': _passwordController.text.trim(), 
         'ikonFarve': _valgtFarve.value,
       });
 
@@ -83,9 +88,39 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
     }
   }
 
+  Future<void> _sletMedlem() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A30),
+        title: const Text('Slet medlem?', style: TextStyle(color: Colors.white)),
+        content: Text('Er du sikker på, at du vil slette ${_navnController.text}? Dette kan ikke fortrydes.', style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuller', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Slet', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return; 
+
+    try {
+      await widget.memberDoc.reference.delete();
+      if (mounted) {
+        Navigator.pop(context); 
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Medlemmet blev slettet.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fejl ved sletning: $e'), backgroundColor: Colors.redAccent));
+      }
+    }
+  }
+
   @override
   void dispose() {
     _navnController.dispose();
+    _passwordController.dispose(); 
     super.dispose();
   }
 
@@ -94,7 +129,7 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     
     return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
+      height: MediaQuery.of(context).size.height * 0.90, 
       decoration: const BoxDecoration(
         color: Color(0xFF202024),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -131,7 +166,7 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // KODE KORT
+                      // KODE KORT (Låst - read only)
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -207,6 +242,40 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
                           }
                         },
                       ),
+                      const SizedBox(height: 24),
+
+                      // PASSWORD FELT MED ØJE-IKON
+                      const Text('Password (Til login)', style: TextStyle(color: Colors.white, fontSize: 16)),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: _obscurePassword, // NYT: Styres nu af variablen
+                        style: const TextStyle(color: Colors.white),
+                        decoration: InputDecoration(
+                          hintText: 'Mindst 6 tegn', 
+                          hintStyle: const TextStyle(color: Colors.white24),
+                          filled: true, 
+                          fillColor: const Color(0xFF2A2A30),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                          // NYT: Suffix ikon der lader brugeren skifte synligheden
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                              color: Colors.white54,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Password må ikke være tomt';
+                          if (v.trim().length < 6) return 'Password skal være mindst 6 tegn';
+                          return null;
+                        },
+                      ),
                       const SizedBox(height: 20),
                     ],
                   ),
@@ -219,36 +288,57 @@ class _RedigerMedlemPopupState extends State<RedigerMedlemPopup> {
               bottom: true,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min, 
                   children: [
-                    // Annuller-knap
-                    Expanded(
-                      flex: 1,
+                    // SLET MEDLEM KNAP 
+                    SizedBox(
+                      width: double.infinity,
                       child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
+                        onPressed: _sletMedlem,
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: const BorderSide(color: Colors.redAccent),
+                          side: const BorderSide(color: Colors.redAccent, width: 1.5),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        child: const Text('Annuller', style: TextStyle(color: Colors.redAccent, fontSize: 16)),
+                        child: const Text('Slet medlem', style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // Gem-knap
-                    Expanded(
-                      flex: 2,
-                      child: ElevatedButton(
-                        onPressed: _isLoading ? null : _gemAendringer,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          backgroundColor: const Color(0xFF008D3D),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    const SizedBox(height: 16),
+
+                    // ANNULLER OG GEM KNAPPER
+                    Row(
+                      children: [
+                        // Annuller-knap
+                        Expanded(
+                          flex: 1,
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              side: const BorderSide(color: Colors.white24),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: const Text('Annuller', style: TextStyle(color: Colors.white54, fontSize: 16)),
+                          ),
                         ),
-                        child: _isLoading 
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text('Gem', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
+                        const SizedBox(width: 16),
+                        // Gem-knap
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: _isLoading ? null : _gemAendringer,
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              backgroundColor: const Color(0xFF008D3D),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: _isLoading 
+                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                              : const Text('Gem', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

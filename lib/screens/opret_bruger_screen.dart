@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'forside_screen.dart'; // Peger nu på vores Forside
-import 'login_screen.dart'; // Udkommenteret indtil vi bygger denne
+import 'login_screen.dart'; // Importerer LoginScreen
 
 class OpretBrugerScreen extends StatefulWidget {
   const OpretBrugerScreen({super.key});
@@ -197,7 +197,11 @@ class _OpretBrugerScreenState extends State<OpretBrugerScreen> {
                 // Log ind link
                 TextButton(
                   onPressed: () {
-                    // TODO: Naviger til LoginScreen
+                    // Skifter til LoginScreen uden at lægge skærmene oven på hinanden i back-historikken
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    );
                   },
                   child: const Text('Har du allerede en bruger? Log ind', style: TextStyle(color: Colors.white70)),
                 ),

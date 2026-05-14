@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'forside_screen.dart';
 import 'opret_bruger_screen.dart';
+import 'borne_dashboard_screen.dart'; // NYT: Husk at importere denne
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,53 +16,56 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _loginController = TextEditingController(); 
   final TextEditingController _passwordController = TextEditingController();
 
   bool _isLoading = false;
-  bool _showPassword = false; // Tilføjet for bedre UX i det mørke tema
+  bool _showPassword = false; 
 
-  // ---------- Genbrugte Validators ----------
-  String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) return 'Indtast en email';
-    final regex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
-    if (!regex.hasMatch(value.trim())) return 'Ugyldig email';
+  String? _validateLoginId(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Indtast email eller unik kode';
+    
+    final trimmed = value.trim();
+    if (trimmed.contains('@')) {
+      final regex = RegExp(r'^[\w\.-]+@[\w\.-]+\.\w+$');
+      if (!regex.hasMatch(trimmed)) return 'Ugyldig email';
+    } else {
+      if (trimmed.length < 6) return 'Koden skal være mindst 6 tegn';
+    }
     return null;
   }
 
   String? _validatePassword(String? value) {
-    if (value == null || value.isEmpty) return 'Indtast password';
-    if (value.length < 6) return 'Password skal være mindst 6 tegn';
+    if (value == null || value.isEmpty) return 'Indtast adgangskode';
+    if (value.length < 6) return 'Adgangskoden skal være mindst 6 tegn';
     return null;
   }
 
-  // ---------- Nulstil Password ----------
   Future<void> _sendPasswordReset() async {
-    final email = _emailController.text.trim();
+    final loginId = _loginController.text.trim();
 
-    final emailError = _validateEmail(email);
-    if (emailError != null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(emailError), backgroundColor: Colors.redAccent));
+    if (loginId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Indtast din email for at nulstille adgangskode.'), backgroundColor: Colors.redAccent));
+      return;
+    }
+
+    if (!loginId.contains('@')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Børn kan ikke nulstille adgangskoden her. Bed en forælder om at ændre den inde på deres profil.'), backgroundColor: Colors.orange),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: loginId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Hvis emailen findes, er der sendt et link til nulstilling. Tjek din indbakke.'), backgroundColor: Colors.green),
+        const SnackBar(content: Text('Hvis emailen findes, er der sendt et link til nulstilling.'), backgroundColor: Colors.green),
       );
-    } on FirebaseAuthException catch (e) {
-      String message = 'Kunne ikke sende reset-link. Prøv igen.';
-      if (e.code == 'invalid-email') message = 'Email-adressen er ikke gyldig.';
-      else if (e.code == 'network-request-failed') message = 'Tjek din internetforbindelse.';
-      else if (e.code == 'too-many-requests') message = 'For mange forsøg. Vent lidt og prøv igen.';
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.redAccent));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kunne ikke sende link.'), backgroundColor: Colors.redAccent));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -71,43 +75,88 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    final email = _emailController.text.trim();
-    final password = _passwordController.text;
+    final loginId = _loginController.text.trim();
+    final password = _passwordController.text.trim();
 
     setState(() => _isLoading = true);
 
     try {
-      final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: email, password: password);
-      final uid = cred.user?.uid;
-      
-      if (uid == null) throw Exception('Login fejlede: ingen bruger-id.');
+      // 1. LOG IND SOM ADMIN (EMAIL)
+      if (loginId.contains('@')) {
+        final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: loginId, password: password);
+        final uid = cred.user?.uid;
+        
+        if (uid == null) throw Exception('Login fejlede.');
 
-      // Sikkerhedstjek: Tjekker at brugerprofilen eksisterer i Firestore
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
-      if (!userDoc.exists) {
-        await FirebaseAuth.instance.signOut();
+        if (!userDoc.exists) {
+          await FirebaseAuth.instance.signOut();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profil mangler.'), backgroundColor: Colors.redAccent));
+          return;
+        }
+
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Din konto er ikke oprettet korrekt (mangler profil). Prøv at oprette brugeren igen.'), backgroundColor: Colors.redAccent),
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const ForsideScreen()), 
         );
-        return;
+      } 
+      // 2. LOG IND SOM MEDLEM (UNIK KODE)
+      else {
+        // Giver læse-adgang hvis ikke logget ind
+        if (FirebaseAuth.instance.currentUser == null) {
+          await FirebaseAuth.instance.signInAnonymously();
+        }
+
+        final querySnap = await FirebaseFirestore.instance
+            .collection('members')
+            .where('loginKode', isEqualTo: loginId)
+            .where('password', isEqualTo: password)
+            .limit(1)
+            .get();
+
+        if (querySnap.docs.isNotEmpty) {
+          final memberDoc = querySnap.docs.first;
+          final memberId = memberDoc.id;
+          
+          // Hent familietilknytning (vi tager den første familie i listen)
+          final List<dynamic> families = memberDoc['familier'] ?? [];
+          if (families.isEmpty) {
+            throw Exception('Du er ikke tilknyttet en familie endnu.');
+          }
+          final String familyId = families.first;
+
+          // Hent familienavnet fra databasen
+          final familySnap = await FirebaseFirestore.instance.collection('families').doc(familyId).get();
+          final String familyName = familySnap.exists ? (familySnap.data()?['name'] ?? 'Min Familie') : 'Min Familie';
+
+          if (!mounted) return;
+          
+          // NYT: Sender barnet direkte til deres eget Dashboard
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => BorneDashboardScreen(
+                familyId: familyId,
+                familyName: familyName,
+                memberId: memberId,
+              ),
+            ),
+          );
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Forkert kode eller adgangskode.'), backgroundColor: Colors.redAccent),
+          );
+        }
       }
 
-      if (!mounted) return;
-
-      // Navigerer til forsiden, og fjerner login-skærmen fra historikken
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const ForsideScreen()),
-      );
-
     } on FirebaseAuthException catch (e) {
-      String message = 'Ukendt fejl';
-      if (e.code == 'user-not-found') message = 'Denne email findes ikke.';
-      else if (e.code == 'wrong-password' || e.code == 'invalid-credential') message = 'Forkert password.';
-      else if (e.code == 'invalid-email') message = 'Email-adressen er ikke gyldig.';
-      else if (e.code == 'too-many-requests') message = 'For mange forsøg. Vent lidt og prøv igen.';
+      String message = 'Fejl ved login.';
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') message = 'Forkert adgangskode.';
+      else if (e.code == 'user-not-found') message = 'Email findes ikke.';
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.redAccent));
@@ -121,18 +170,17 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _loginController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
-  // ---------- UI (Dark Mode) ----------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Log ind'),
-        automaticallyImplyLeading: false, // Fjerner "tilbage" pilen
+        automaticallyImplyLeading: false, 
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -142,29 +190,26 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Logo
                 Image.asset(
-  'assets/images/logo.png',
-  height: 120, // Gerne lidt stort på login skærmen
-  fit: BoxFit.contain,
-),
-const SizedBox(height: 40),
+                  'assets/images/logo.png',
+                  height: 120, 
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => Container(height: 120, color: Colors.white10, alignment: Alignment.center, child: const Text('Logo')),
+                ),
+                const SizedBox(height: 40),
                 
                 const Text('Velkommen tilbage!', textAlign: TextAlign.center, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white)),
                 const SizedBox(height: 8),
                 const Text('Log ind for at se dine opgaver', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.white54)),
                 const SizedBox(height: 30),
 
-                // Email felt
                 _buildTextField(
-                  controller: _emailController,
-                  label: 'Email',
-                  keyboardType: TextInputType.emailAddress,
-                  validator: _validateEmail,
+                  controller: _loginController,
+                  label: 'Email eller Unik kode',
+                  validator: _validateLoginId,
                 ),
                 const SizedBox(height: 16),
                 
-                // Password felt (Nu med "vis/skjul" knap)
                 _buildTextField(
                   controller: _passwordController,
                   label: 'Adgangskode',
@@ -176,22 +221,20 @@ const SizedBox(height: 40),
                   ),
                 ),
 
-                // Glemt password knap
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: _isLoading ? null : _sendPasswordReset,
-                    child: const Text('Glemt password?', style: TextStyle(color: Color(0xFFFFD166))), // Gul accentfarve
+                    child: const Text('Glemt adgangskode?', style: TextStyle(color: Color(0xFFFFD166))), 
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // Log Ind Knap
                 SizedBox(
                   height: 60,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF008D3D), // Orange primærfarve
+                      backgroundColor: const Color(0xFF008D3D), 
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
@@ -204,7 +247,6 @@ const SizedBox(height: 40),
                 
                 const SizedBox(height: 16),
                 
-                // Opret bruger link
                 TextButton(
                   onPressed: () {
                     Navigator.pushReplacement(
@@ -222,7 +264,6 @@ const SizedBox(height: 40),
     );
   }
 
-  // Hjælpe-widget til styling af tekstfelter
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,

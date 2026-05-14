@@ -34,6 +34,13 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   int _taskRepetitions = 1;
   List<String> _selectedMembers = [];
 
+  // --- HUSKE-VARIABLER TIL AT TJEKKE UGEMTE ÆNDRINGER ---
+  String _initTaskName = '';
+  String _initTaskDesc = '';
+  bool _initIsMandatory = false;
+  int _initTaskRepetitions = 1;
+  List<String> _initSelectedMembers = [];
+
   // --- DATA FRA DATABASE ---
   List<Map<String, dynamic>> _familyMembers = [];
   bool _isLoadingMembers = true;
@@ -48,14 +55,23 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       _currentStep = 2;
     }
 
-    // Hvis vi er i REDIGER mode, så udfyld felterne automatisk
+    // Hvis vi er i REDIGER mode, så udfyld felterne automatisk og gem start-værdier
     if (widget.taskDoc != null) {
       final data = widget.taskDoc!.data() as Map<String, dynamic>;
-      _taskNameCtrl.text = data['navn'] ?? '';
-      _taskDescCtrl.text = data['beskrivelse'] ?? '';
-      _isMandatory = data['erMandatory'] ?? false;
-      _taskRepetitions = data['antalGange'] ?? 1;
-      _selectedMembers = [data['medlemId']]; // Marker det medlem som opgaven allerede tilhører
+      
+      // Sæt start-værdierne til at tjekke ugemte ændringer senere
+      _initTaskName = data['navn'] ?? '';
+      _initTaskDesc = data['beskrivelse'] ?? '';
+      _initIsMandatory = data['erMandatory'] ?? false;
+      _initTaskRepetitions = data['antalGange'] ?? 1;
+      _initSelectedMembers = [data['medlemId']];
+
+      // Udfyld formen
+      _taskNameCtrl.text = _initTaskName;
+      _taskDescCtrl.text = _initTaskDesc;
+      _isMandatory = _initIsMandatory;
+      _taskRepetitions = _initTaskRepetitions;
+      _selectedMembers = List.from(_initSelectedMembers); 
     }
 
     _fetchMembers();
@@ -87,7 +103,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     }
   }
 
-// --- VALIDERINGER ---
+  // --- VALIDERINGER ---
   String? _validateNavn(String? value, int maxLength) {
     if (value == null || value.trim().isEmpty) return 'Feltet må ikke være tomt';
     if (value.trim().length > maxLength) return 'Maks $maxLength tegn';
@@ -99,6 +115,31 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     if (value == null || value.trim().isEmpty) return 'Beskrivelsen må ikke være tom';
     if (value.trim().length > maxLength) return 'Beskrivelsen er for lang (Maks $maxLength tegn)';
     return null;
+  }
+
+  // NYT: Tjekker om brugeren reelt har rettet i noget!
+  bool _hasUnsavedChanges() {
+    bool rewardChanged = _rewardNameCtrl.text.trim().isNotEmpty ||
+                         _rewardDescCtrl.text.trim().isNotEmpty ||
+                         _completionCriteria != 50.0;
+    
+    // For arrays konverterer vi midlertidigt til sorteret string for nem sammenligning
+    String currentMembers = (_selectedMembers.toList()..sort()).join(',');
+    String initialMembers = (_initSelectedMembers.toList()..sort()).join(',');
+
+    bool taskChanged = _taskNameCtrl.text.trim() != _initTaskName ||
+                       _taskDescCtrl.text.trim() != _initTaskDesc ||
+                       _isMandatory != _initIsMandatory ||
+                       _taskRepetitions != _initTaskRepetitions ||
+                       currentMembers != initialMembers;
+
+    if (widget.taskDoc != null || widget.rewardId != null) {
+      // Vi er i gang med at redigere eller tilføje opgave -> tjek kun opgaven
+      return taskChanged;
+    } else {
+      // Vi er ved at oprette en helt ny belønning -> Tjek begge
+      return rewardChanged || taskChanged;
+    }
   }
 
   Future<bool> _showExitDialog() async {
@@ -121,6 +162,41 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       ),
     );
     return shouldPop ?? false;
+  }
+
+  // --- NY FUNKTION: Slet Opgave ---
+  Future<void> _deleteTask() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A30),
+        title: const Text('Slet opgave?', style: TextStyle(color: Colors.white)),
+        content: const Text('Er du sikker på, at du vil slette denne opgave? Det kan ikke fortrydes.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuller', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Slet', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isSaving = true);
+    try {
+      await widget.taskDoc!.reference.delete();
+      if (mounted) {
+        Navigator.of(context).pop(); 
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Opgaven blev slettet.'), backgroundColor: Color(0xFF008D3D))
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fejl ved sletning: $e'), backgroundColor: Colors.redAccent));
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   // Den kloge database-funktion
@@ -237,6 +313,13 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       canPop: false,
       onPopInvoked: (didPop) async {
         if (didPop) return;
+        
+        // Tjek om brugeren rent faktisk har indtastet noget
+        if (!_hasUnsavedChanges()) {
+          Navigator.of(context).pop();
+          return;
+        }
+        
         final shouldExit = await _showExitDialog();
         if (shouldExit && context.mounted) Navigator.of(context).pop();
       },
@@ -255,6 +338,12 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white54),
                     onPressed: () async {
+                      // Tjek om vi skal advare, før der lukkes
+                      if (!_hasUnsavedChanges()) {
+                        Navigator.of(context).pop();
+                        return;
+                      }
+                      
                       final shouldExit = await _showExitDialog();
                       if (shouldExit && context.mounted) Navigator.of(context).pop();
                     },
@@ -262,14 +351,12 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      // Dynamisk titel baseret på hvor vi er
                       widget.taskDoc != null 
                         ? 'Ret opgave' 
                         : (widget.rewardId != null ? 'Opret opgave' : (_currentStep == 1 ? 'Opret belønning' : 'Tilføj opgaver')),
                       style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                     ),
                   ),
-                  // Tilbageknap skjules i redigerings mode
                   if (_currentStep == 2 && widget.rewardId == null && widget.taskDoc == null)
                     IconButton(
                       icon: const Icon(Icons.arrow_back_ios_new, color: Color(0xFFFF6B35)),
@@ -306,7 +393,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                   child: _isSaving
                       ? const CircularProgressIndicator(color: Colors.white)
                       : Text(
-                          // Dynamisk knap-tekst baseret på mode
                           widget.taskDoc != null 
                             ? 'Gem ændringer' 
                             : (widget.rewardId != null ? 'Opret opgave' : (_currentStep == 1 ? 'Tilføj opgaver' : 'Opret belønning')),
@@ -496,6 +582,25 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                 );
               }).toList(),
             ),
+
+          // NYT: SLET OPGAVE KNAP (Vises kun når vi redigerer en eksisterende opgave)
+          if (widget.taskDoc != null) ...[
+            const SizedBox(height: 32),
+            const Divider(color: Color(0xFF3F3F46), height: 1),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _isSaving ? null : _deleteTask,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: Colors.redAccent, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Slet opgave', style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+          ]
         ],
       ),
     );
