@@ -13,14 +13,18 @@ class AppDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final currentUserId = currentUser?.uid;
+    
+    // Tjekker om det er et barn (anonym bruger) der er logget ind
+    final bool isChild = currentUser?.isAnonymous ?? false; 
 
     return Drawer(
       backgroundColor: const Color(0xFF202024),
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // HEADER
+          // HEADER (Vises for alle)
           DrawerHeader(
             decoration: const BoxDecoration(
               color: Color(0xFF2A2A30),
@@ -47,107 +51,110 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
 
-          // FORSIDE
-          ListTile(
-            leading: const Icon(Icons.dashboard_rounded, color: Colors.white70),
-            title: const Text('Forside', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const ForsideScreen()),
-              );
-            },
-          ),
-          const Divider(color: Color(0xFF3F3F46)),
+          // VOKSEN MENU-PUNKTER (Skjules for børn)
+          if (!isChild) ...[
+            // FORSIDE
+            ListTile(
+              leading: const Icon(Icons.dashboard_rounded, color: Colors.white70),
+              title: const Text('Forside', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ForsideScreen()),
+                );
+              },
+            ),
+            const Divider(color: Color(0xFF3F3F46)),
 
-          // DYNAMISKE FAMILIE-PUNKTER (Max 4)
-          if (currentUserId != null)
-            StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('families')
-                  .where('createdBy', isEqualTo: currentUserId)
-                  .limit(4)
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const SizedBox.shrink();
-                }
+            // DYNAMISKE FAMILIE-PUNKTER (Max 4)
+            if (currentUserId != null)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('families')
+                    .where('createdBy', isEqualTo: currentUserId)
+                    .limit(4)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError || !snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
 
-                final families = snapshot.data!.docs;
+                  final families = snapshot.data!.docs;
 
-                return Column(
-                  children: [
-                    ...families.map((doc) {
-                      final familyName = doc['name'] ?? 'Ukendt familie';
-                      return ListTile(
-                        leading: const Icon(Icons.home_rounded, color: Colors.white70),
-                        title: Text(familyName, style: const TextStyle(color: Colors.white)),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-  builder: (context) => DashboardScreen(
-    familyId: doc.id, // ID'et fra Firebase dokumentet
-    familyName: familyName, // Navnet fra Firebase dokumentet
-  ),
-),
-                          );
-                        },
-                      );
-                    }),
-                    const Divider(color: Color(0xFF3F3F46)),
-                  ],
+                  return Column(
+                    children: [
+                      ...families.map((doc) {
+                        final familyName = doc['name'] ?? 'Ukendt familie';
+                        return ListTile(
+                          leading: const Icon(Icons.home_rounded, color: Colors.white70),
+                          title: Text(familyName, style: const TextStyle(color: Colors.white)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => DashboardScreen(
+                                  familyId: doc.id,
+                                  familyName: familyName,
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      }),
+                      const Divider(color: Color(0xFF3F3F46)),
+                    ],
+                  );
+                },
+              ),
+
+            // OPRET FAMILIE
+            ListTile(
+              leading: const Icon(Icons.add_circle_outline, color: Colors.white70),
+              title: const Text('Opret familie', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (context) => const OpretFamiliePopup(),
                 );
               },
             ),
 
-          // OPRET FAMILIE
-          ListTile(
-            leading: const Icon(Icons.add_circle_outline, color: Colors.white70),
-            title: const Text('Opret familie', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Colors.transparent,
-                builder: (context) => const OpretFamiliePopup(),
-              );
-            },
-          ),
+            // MEDLEMMER
+            ListTile(
+              leading: const Icon(Icons.people_alt_outlined, color: Colors.white70),
+              title: const Text('Medlemmer', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const MedlemmerScreen()),
+                );
+              },
+            ),
 
-          // MEDLEMMER
-          ListTile(
-            leading: const Icon(Icons.people_alt_outlined, color: Colors.white70),
-            title: const Text('Medlemmer', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const MedlemmerScreen()),
-              );
-            },
-          ),
+            // PROFIL
+            ListTile(
+              leading: const Icon(Icons.person_outline, color: Colors.white70),
+              title: const Text('Profil', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ProfilScreen()),
+                );
+              },
+            ),
 
-          // PROFIL
-          ListTile(
-            leading: const Icon(Icons.person_outline, color: Colors.white70),
-            title: const Text('Profil', style: TextStyle(color: Colors.white)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilScreen()),
-              );
-            },
-          ),
+            const SizedBox(height: 20),
+            const Divider(color: Color(0xFF3F3F46)),
+          ], // Slut på voksen-sektion
 
-          const SizedBox(height: 20),
-          const Divider(color: Color(0xFF3F3F46)),
-
-         // LOG UD
+          // LOG UD (Vises for alle, både børn og voksne)
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Log ud', style: TextStyle(color: Colors.redAccent)),
@@ -162,7 +169,7 @@ class AppDrawer extends StatelessWidget {
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  (Route<dynamic> route) => false, // false betyder at "Tilbage"-knappen nulstilles
+                  (Route<dynamic> route) => false, 
                 );
               }
             },

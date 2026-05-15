@@ -45,6 +45,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   List<Map<String, dynamic>> _familyMembers = [];
   bool _isLoadingMembers = true;
   bool _isSaving = false;
+  String? _existingRewardMemberId; // Gemmer ejeren af belønningen, hvis vi tilføjer en ny opgave
 
   @override
   void initState() {
@@ -72,6 +73,9 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       _isMandatory = _initIsMandatory;
       _taskRepetitions = _initTaskRepetitions;
       _selectedMembers = List.from(_initSelectedMembers); 
+    } else if (widget.rewardId != null) {
+      // Hvis vi TILFØJER en ny opgave til en eksisterende belønning, skal vi finde ud af, hvem belønningen tilhører
+      _fetchExistingRewardMember();
     }
 
     _fetchMembers();
@@ -84,6 +88,29 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     _taskNameCtrl.dispose();
     _taskDescCtrl.dispose();
     super.dispose();
+  }
+
+  // NYT: Finder ud af, hvilket medlem en eksisterende belønning tilhører, ved at kigge på dens første opgave
+  Future<void> _fetchExistingRewardMember() async {
+    try {
+      final tasksSnap = await FirebaseFirestore.instance
+          .collection('families')
+          .doc(widget.familyId)
+          .collection('rewards')
+          .doc(widget.rewardId)
+          .collection('tasks')
+          .limit(1)
+          .get();
+
+      if (tasksSnap.docs.isNotEmpty) {
+        setState(() {
+          _existingRewardMemberId = tasksSnap.docs.first['medlemId'];
+          _selectedMembers = [_existingRewardMemberId!]; // Sæt automatisk det valgte medlem
+        });
+      }
+    } catch (e) {
+      debugPrint("Kunne ikke hente ejer af belønning: $e");
+    }
   }
 
   Future<void> _fetchMembers() async {
@@ -111,13 +138,15 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     return null;
   }
 
-  String? _validateBeskrivelse(String? value, int maxLength) {
-    if (value == null || value.trim().isEmpty) return 'Beskrivelsen må ikke være tom';
-    if (value.trim().length > maxLength) return 'Beskrivelsen er for lang (Maks $maxLength tegn)';
-    return null;
+String? _validateBeskrivelse(String? value, int maxLength) {
+    // Vi tjekker kun for længden, hvis der rent faktisk er skrevet noget
+    if (value != null && value.trim().isNotEmpty) {
+      if (value.trim().length > maxLength) return 'Maks $maxLength tegn';
+    }
+    return null; // Det er nu helt tilladt at lade feltet være tomt!
   }
 
-  // NYT: Tjekker om brugeren reelt har rettet i noget!
+  // Tjekker om brugeren reelt har rettet i noget!
   bool _hasUnsavedChanges() {
     bool rewardChanged = _rewardNameCtrl.text.trim().isNotEmpty ||
                          _rewardDescCtrl.text.trim().isNotEmpty ||
@@ -199,12 +228,28 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     }
   }
 
-  // Den kloge database-funktion
+  // ============================================================
+  // DEN NYE DATABASE LOGIK: EN BELØNNING PR. MEDLEM
+  // ============================================================
   Future<void> _saveToDatabase() async {
     if (!_taskFormKey.currentState!.validate()) return;
-    if (_selectedMembers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vælg mindst ét medlem!'), backgroundColor: Colors.redAccent),
+    
+    // Hvis vi tilføjer til eksisterende belønning, har vi allerede _existingRewardMemberId,
+    // men ellers tjekker vi om der er valgt et medlem.
+    if (_selectedMembers.isEmpty && _existingRewardMemberId == null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: const Color(0xFF2A2A30),
+          title: const Text('Hov!', style: TextStyle(color: Colors.white)),
+          content: const Text('Du skal vælge mindst ét medlem for at gemme eller oprette opgaven.', style: TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK', style: TextStyle(color: Color(0xFFFF6B35))),
+            ),
+          ],
+        ),
       );
       return;
     }
@@ -218,8 +263,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       // SCENARIE 1: Vi redigerer en eksisterende opgave
       if (widget.taskDoc != null) {
         final originalMemberId = widget.taskDoc!['medlemId'];
-        final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
-
+        
         // A) Opdater den originale opgave med ny tekst og tal
         batch.update(widget.taskDoc!.reference, {
           'navn': _taskNameCtrl.text.trim(),
@@ -228,10 +272,28 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
           'antalGange': _taskRepetitions,
         });
 
-        // B) Hvis brugeren har valgt *nye* medlemmer udover det oprindelige, opretter vi en kopi til dem
+        // B) Hvis brugeren har valgt *nye* medlemmer udover det oprindelige, opretter vi en HELT NY belønning til dem
         for (String memberId in _selectedMembers) {
           if (memberId != originalMemberId) {
-            final newTaskRef = rewardRef.collection('tasks').doc();
+             final newRewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
+             
+// Vi henter stam-data fra den nuværende belønning for at kopiere den
+             final originalRewardSnap = await db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId).get();
+             
+             // Vi fortæller Dart præcist, at dataen er et Map
+             final Map<String, dynamic>? rewardData = originalRewardSnap.data();
+
+             final String rewardName = rewardData?['navn'] ?? _taskNameCtrl.text.trim();
+             final String rewardDesc = rewardData?['beskrivelse'] ?? '';
+             final double completionCriteria = (rewardData?['fuldfoertKriterie'] ?? 50.0).toDouble();
+             batch.set(newRewardRef, {
+               'navn': rewardName,
+               'beskrivelse': rewardDesc,
+               'fuldfoertKriterie': completionCriteria,
+               'createdAt': FieldValue.serverTimestamp(),
+             });
+
+            final newTaskRef = newRewardRef.collection('tasks').doc();
             batch.set(newTaskRef, {
               'navn': _taskNameCtrl.text.trim(),
               'beskrivelse': _taskDescCtrl.text.trim(),
@@ -244,34 +306,34 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
           }
         }
       } 
-      // SCENARIE 2: Vi tilføjer opgaver til en eksisterende belønning
+      // SCENARIE 2: Vi tilføjer en NY opgave til en eksisterende belønning
       else if (widget.rewardId != null) {
         final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
         
-        for (String memberId in _selectedMembers) {
-          final taskRef = rewardRef.collection('tasks').doc();
-          batch.set(taskRef, {
-            'navn': _taskNameCtrl.text.trim(),
-            'beskrivelse': _taskDescCtrl.text.trim(),
-            'erMandatory': _isMandatory,
-            'antalGange': _taskRepetitions,
-            'udfoertGange': 0,
-            'medlemId': memberId,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
-        }
-      } 
-      // SCENARIE 3: Vi opretter en helt ny belønning OG opgaver
-      else {
-        final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
-        batch.set(rewardRef, {
-          'navn': _rewardNameCtrl.text.trim(),
-          'beskrivelse': _rewardDescCtrl.text.trim(),
-          'fuldfoertKriterie': _completionCriteria,
+        // Vi bruger det medlem, som belønningen i forvejen tilhører
+        final taskRef = rewardRef.collection('tasks').doc();
+        batch.set(taskRef, {
+          'navn': _taskNameCtrl.text.trim(),
+          'beskrivelse': _taskDescCtrl.text.trim(),
+          'erMandatory': _isMandatory,
+          'antalGange': _taskRepetitions,
+          'udfoertGange': 0,
+          'medlemId': _existingRewardMemberId ?? _selectedMembers.first, 
           'createdAt': FieldValue.serverTimestamp(),
         });
-
+      } 
+      // SCENARIE 3: Vi opretter en helt ny belønning (HER SKER MAGIEN)
+      else {
+        // Vi looper igennem alle valgte medlemmer og opretter 1 belønning pr. medlem
         for (String memberId in _selectedMembers) {
+          final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
+          batch.set(rewardRef, {
+            'navn': _rewardNameCtrl.text.trim(),
+            'beskrivelse': _rewardDescCtrl.text.trim(),
+            'fuldfoertKriterie': _completionCriteria,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
           final taskRef = rewardRef.collection('tasks').doc();
           batch.set(taskRef, {
             'navn': _taskNameCtrl.text.trim(),
@@ -309,6 +371,10 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
 
   @override
   Widget build(BuildContext context) {
+    // Bestem om avatar-sektionen (Vælg Medlemmer) skal vises
+    // Vi skjuler den KUN, hvis vi tilføjer en NY opgave til en EKSISTERENDE belønning via "plus" ikonet
+    bool showMemberSelection = !(widget.rewardId != null && widget.taskDoc == null);
+
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
@@ -370,7 +436,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
-                child: _currentStep == 1 ? _buildStep1() : _buildStep2(),
+                child: _currentStep == 1 ? _buildStep1() : _buildStep2(showMemberSelection),
               ),
             ),
 
@@ -468,7 +534,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     );
   }
 
-  Widget _buildStep2() {
+  Widget _buildStep2(bool showMemberSelection) {
     return Form(
       key: _taskFormKey,
       child: Column(
@@ -526,64 +592,68 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
               ),
             ],
           ),
-          const SizedBox(height: 32),
-          _buildLabel('Vælg hvem der skal udføre opgaven'),
-          const SizedBox(height: 12),
-          if (_isLoadingMembers)
-            const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)))
-          else
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: _familyMembers.map((member) {
-                final String name = member['navn'] ?? 'Ukendt';
-                final String shortName = name.split(' ')[0];
-                final bool isSelected = _selectedMembers.contains(member['id']);
+          
+          // SKJULER MEDLEMSVALG HVIS VI OPRETTER OPGAVE PÅ EKSISTERENDE BELØNNING
+          if (showMemberSelection) ...[
+            const SizedBox(height: 32),
+            _buildLabel('Tildel også belønning og opgave til'),
+            const SizedBox(height: 12),
+            if (_isLoadingMembers)
+              const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)))
+            else
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: _familyMembers.map((member) {
+                  final String name = member['navn'] ?? 'Ukendt';
+                  final String shortName = name.split(' ')[0];
+                  final bool isSelected = _selectedMembers.contains(member['id']);
 
-                return GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      if (isSelected) {
-                        _selectedMembers.remove(member['id']);
-                      } else {
-                        _selectedMembers.add(member['id']);
-                      }
-                    });
-                  },
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isSelected ? const Color(0xFFFF6B35).withOpacity(0.2) : Colors.transparent,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected ? const Color(0xFFFF6B35) : const Color(0xFF3F3F46),
-                            width: 2,
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        if (isSelected) {
+                          _selectedMembers.remove(member['id']);
+                        } else {
+                          _selectedMembers.add(member['id']);
+                        }
+                      });
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isSelected ? const Color(0xFFFF6B35).withOpacity(0.2) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isSelected ? const Color(0xFFFF6B35) : const Color(0xFF3F3F46),
+                              width: 2,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.person_outline,
+                            color: isSelected ? const Color(0xFFFF6B35) : Colors.white54,
+                            size: 30,
                           ),
                         ),
-                        child: Icon(
-                          Icons.person_outline,
-                          color: isSelected ? const Color(0xFFFF6B35) : Colors.white54,
-                          size: 30,
+                        const SizedBox(height: 6),
+                        Text(
+                          shortName,
+                          style: TextStyle(
+                            color: isSelected ? const Color(0xFFFF6B35) : Colors.white70,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        shortName,
-                        style: TextStyle(
-                          color: isSelected ? const Color(0xFFFF6B35) : Colors.white70,
-                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+          ],
 
-          // NYT: SLET OPGAVE KNAP (Vises kun når vi redigerer en eksisterende opgave)
+          // SLET OPGAVE KNAP (Vises kun når vi redigerer en eksisterende opgave)
           if (widget.taskDoc != null) ...[
             const SizedBox(height: 32),
             const Divider(color: Color(0xFF3F3F46), height: 1),

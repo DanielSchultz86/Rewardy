@@ -97,7 +97,7 @@ class _BorneDashboardScreenState extends State<BorneDashboardScreen> {
   Widget _buildBottomTabs() {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF1A1A1E),
+        color: Color(0xFF232227),
         border: Border(top: BorderSide(color: Color(0xFF3F3F46))),
       ),
       child: SafeArea( 
@@ -239,7 +239,7 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
           decoration: BoxDecoration(
             border: Border.all(color: isCompleted ? const Color(0xFF008D3D) : const Color(0xFF3F3F46)),
             borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFF1A1A1E),
+            color: const Color(0xFF232227),
           ),
           child: Column(
             children: [
