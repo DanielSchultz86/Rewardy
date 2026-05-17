@@ -3,10 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 
-// Vi omdøber den til "Popup" for at det giver mening, 
-// men filnavnet opret_medlem_screen.dart kan bare forblive det samme!
 class OpretMedlemPopup extends StatefulWidget {
-  const OpretMedlemPopup({super.key});
+  final String? familyId; 
+
+  const OpretMedlemPopup({
+    super.key,
+    this.familyId, 
+  });
 
   @override
   State<OpretMedlemPopup> createState() => _OpretMedlemPopupState();
@@ -15,11 +18,11 @@ class OpretMedlemPopup extends StatefulWidget {
 class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _navnController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController(); // NYT: Controller til password
+  final TextEditingController _passwordController = TextEditingController(); 
   
   late String _unikKode;
   bool _isLoading = false;
-  bool _obscurePassword = true; // NYT: Styrer om passwordet er skjult
+  bool _obscurePassword = true; 
 
   final List<Map<String, dynamic>> _farveMuligheder = [
     {'navn': 'Orange (Standard)', 'farve': const Color(0xFFFF6B35)},
@@ -50,11 +53,15 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
         6, (_) => chars.codeUnitAt(rnd.nextInt(chars.length))));
   }
 
+  // OPDATERET VALIDERINGSFUNKTION
   String? _validerNavn(String? value) {
-    if (value == null || value.isEmpty) return 'Indtast venligst et navn';
-    if (value.length > 40) return 'Navnet må maksimalt være 40 tegn';
-    if (value.endsWith(' ')) return 'Navnet må ikke slutte med et mellemrum';
-    if (!RegExp(r'^[a-zA-ZæøåÆØÅ0-9 ]+$').hasMatch(value)) return 'Kun bogstaver og tal er tilladt';
+    if (value == null || value.trim().isEmpty) return 'Indtast venligst et navn';
+    
+    // Vi trimmer teksten for validering, så mellemrum til sidst ikke udløser fejl
+    final trimmedValue = value.trim();
+    
+    if (trimmedValue.length > 40) return 'Navnet må maksimalt være 40 tegn';
+    if (!RegExp(r'^[a-zA-ZæøåÆØÅ0-9 ]+$').hasMatch(trimmedValue)) return 'Kun bogstaver og tal er tilladt';
     return null;
   }
 
@@ -70,13 +77,15 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
 
       final docRef = db.collection('members').doc();
 
+      final List<String> initialFamilies = widget.familyId != null ? [widget.familyId!] : [];
+
       await docRef.set({
         'id': docRef.id,
-        'navn': _navnController.text.trim(),
+        'navn': _navnController.text.trim(), // Trimmer automatisk ved gem!
         'loginKode': _unikKode,
-        'password': _passwordController.text.trim(), // NYT: Gemmer det indtastede password
+        'password': _passwordController.text.trim(), 
         'ikonFarve': _valgtFarve.value, 
-        'familier': [], 
+        'familier': initialFamilies, 
         'rewardsEarned': 0,
         'tasksCompleted': 0,
         'oprettetAf': adminUser.uid, 
@@ -87,12 +96,11 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Medlemmet ${_navnController.text} blev oprettet!'),
+          content: Text('Medlemmet ${_navnController.text.trim()} blev oprettet!'),
           backgroundColor: const Color(0xFF008D3D),
         ),
       );
       
-      // Lukker popuppen i stedet for at gå tilbage på fuld skærm
       Navigator.pop(context); 
     } catch (e) {
       if (!mounted) return;
@@ -107,17 +115,15 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
   @override
   void dispose() {
     _navnController.dispose();
-    _passwordController.dispose(); // NYT: Ryd op efter controlleren
+    _passwordController.dispose(); 
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // viewInsets.bottom hjælper med at skubbe indholdet op, når tastaturet åbner
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     
     return Container(
-      // Sat en anelse op i højden, ligesom i rediger_medlem, for at gøre plads til det ekstra felt
       height: MediaQuery.of(context).size.height * 0.90,
       decoration: const BoxDecoration(
         color: Color(0xFF202024), 
@@ -128,7 +134,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- POPUP HEADER ---
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 20, 16, 10),
               child: Row(
@@ -146,7 +151,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
               ),
             ),
             
-            // --- FORMULAR ---
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
@@ -155,7 +159,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // KODE KORT
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -188,7 +191,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
                       
                       const SizedBox(height: 30),
 
-                      // NAVN FELT
                       const Text('Navn på medlem', style: TextStyle(color: Colors.white, fontSize: 16)),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -206,7 +208,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
 
                       const SizedBox(height: 24),
 
-                      // FARVE DROPDOWN
                       const Text('Ikon farve', style: TextStyle(color: Colors.white, fontSize: 16)),
                       const SizedBox(height: 8),
                       DropdownButtonFormField<Color>(
@@ -241,7 +242,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
                       ),
                       const SizedBox(height: 24),
 
-                      // NYT: PASSWORD FELT MED ØJE-IKON
                       const Text('Password (Til login)', style: TextStyle(color: Colors.white, fontSize: 16)),
                       const SizedBox(height: 8),
                       TextFormField(
@@ -279,7 +279,6 @@ class _OpretMedlemPopupState extends State<OpretMedlemPopup> {
               ),
             ),
 
-            // --- DEN GRØNNE KNAP ---
             SafeArea(
               bottom: true,
               child: InkWell(

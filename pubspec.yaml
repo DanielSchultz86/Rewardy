@@ -43,6 +43,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.13.1  # Tilføj denne linje!
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -91,3 +92,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+flutter_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  # Du kan også tilføje en baggrundsfarve, hvis dit ikon har gennemsigtig baggrund:
+  # adaptive_icon_background: "#232227" 
+  # adaptive_icon_foreground: "assets/icon/app_icon.png"

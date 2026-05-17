@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:firebase_auth/firebase_auth.dart'; 
 import 'opret_familie_screen.dart';
-import 'profil.dart';
+import 'profil_screen.dart'; // <- Her er den korrekte import!
 import 'dashboard_screen.dart'; 
 import 'medlemmer_screen.dart'; 
 import '../widgets/app_drawer.dart';

@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/app_drawer.dart';
 import 'opret_belonning_popup.dart';
+import 'opret_medlem_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String familyId;
@@ -24,6 +25,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   late Stream<QuerySnapshot> _rewardsStream;
   late Stream<QuerySnapshot> _membersStream;
+  late Stream<QuerySnapshot> _pendingTasksStream;
 
   @override
   void initState() {
@@ -39,6 +41,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .collection('members')
         .where('familier', arrayContains: widget.familyId)
         .snapshots();
+        
+    _pendingTasksStream = FirebaseFirestore.instance
+        .collectionGroup('tasks')
+        .where('pendingGodkendelser', isGreaterThan: 0)
+        .snapshots();
   }
 
   @override
@@ -47,13 +54,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: const Color(0xFF121214),
       drawer: const AppDrawer(),
       appBar: AppBar(
-        title: Text(widget.familyName, style: const TextStyle(fontSize: 18)),
+        title: StreamBuilder<DocumentSnapshot>(
+          stream: FirebaseFirestore.instance.collection('families').doc(widget.familyId).snapshots(),
+          builder: (context, snapshot) {
+            final title = snapshot.hasData && snapshot.data!.exists
+                ? (snapshot.data!.data() as Map<String, dynamic>)['name'] ?? widget.familyName
+                : widget.familyName;
+            return Text(title, style: const TextStyle(fontSize: 18));
+          },
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              // TODO: Indstillinger for familien
-            },
+            onPressed: () => _showFamilySettingsPopup(context),
           ),
         ],
       ),
@@ -63,6 +76,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
           Column(
             children: [
               _buildMemberFilter(),
+              
+              _buildPendingApprovalsSection(),
               
               if (_currentTab == 1)
                 const Padding(
@@ -92,9 +107,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
                       itemCount: rewardDocs.length,
                       itemBuilder: (context, index) {
-                        // NYT: Nu bruger vi vores nye selvstændige RewardCard widget!
                         return RewardCard(
-                          key: ValueKey(rewardDocs[index].id), // Garanterer at elementet ikke genbruger forkerte data
+                          key: ValueKey(rewardDocs[index].id),
                           rewardDoc: rewardDocs[index],
                           currentTab: _currentTab,
                           selectedMemberId: selectedMemberId,
@@ -127,6 +141,119 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // --- WIDGETS ---
+  
+  Widget _buildPendingApprovalsSection() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _pendingTasksStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox.shrink();
+
+        final pendingDocs = snapshot.data!.docs.where((doc) => doc.reference.path.contains(widget.familyId)).toList();
+
+        if (pendingDocs.isEmpty) return const SizedBox.shrink();
+
+        return Container(
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A2A30),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFFD166), width: 1.5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.pending_actions_rounded, color: Color(0xFFFFD166)),
+                  const SizedBox(width: 8),
+                  const Text('Afventer godkendelse', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: const Color(0xFFFFD166), borderRadius: BorderRadius.circular(10)),
+                    child: Text('${pendingDocs.length}', style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Column(
+                children: pendingDocs.map((doc) => _buildPendingTaskItem(doc)).toList(),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+  
+  Widget _buildPendingTaskItem(QueryDocumentSnapshot taskDoc) {
+    final data = taskDoc.data() as Map<String, dynamic>;
+    final name = data['navn'] ?? 'Ukendt opgave';
+    final memberId = data['medlemId'] ?? '';
+    final pendingCount = data['pendingGodkendelser'] ?? 0;
+    
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        children: [
+          FutureBuilder<DocumentSnapshot>(
+            future: FirebaseFirestore.instance.collection('members').doc(memberId).get(),
+            builder: (context, memberSnap) {
+              final memberData = memberSnap.data?.data() as Map<String, dynamic>?;
+              final memberName = memberData?['navn']?.split(' ')[0] ?? '...';
+              final colorVal = memberData?['ikonFarve'] ?? Colors.grey.value;
+
+              return CircleAvatar(
+                radius: 14, backgroundColor: Color(colorVal),
+                child: Text(memberName.isNotEmpty ? memberName[0] : '?', style: const TextStyle(color: Colors.white, fontSize: 12)),
+              );
+            },
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                if (pendingCount > 1) 
+                  Text('$pendingCount anmodninger', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.redAccent),
+            onPressed: () => _handleApproval(taskDoc, false),
+            tooltip: 'Afvis',
+          ),
+          IconButton(
+            icon: const Icon(Icons.check_circle_rounded, color: Color(0xFF008D3D), size: 28),
+            onPressed: () => _handleApproval(taskDoc, true),
+            tooltip: 'Godkend',
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Future<void> _handleApproval(QueryDocumentSnapshot taskDoc, bool isApproved) async {
+    final data = taskDoc.data() as Map<String, dynamic>;
+    final int pending = data['pendingGodkendelser'] ?? 0;
+    final int done = data['udfoertGange'] ?? 0;
+    
+    if (pending > 0) {
+      if (isApproved) {
+        await taskDoc.reference.update({
+          'pendingGodkendelser': pending - 1,
+          'udfoertGange': done + 1,
+        });
+      } else {
+        await taskDoc.reference.update({
+          'pendingGodkendelser': pending - 1,
+        });
+      }
+    }
+  }
 
   Widget _buildBottomTabs() {
     return Container(
@@ -221,7 +348,67 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // --- POPUPS OG SLETNING ---
+  void _showFamilySettingsPopup(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, 
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => FamilySettingsSheet(
+        familyId: widget.familyId,
+        initialName: widget.familyName,
+        onDeleteFamily: () => _deleteFamily(sheetContext),
+      ),
+    );
+  }
+
+  Future<void> _deleteFamily(BuildContext sheetContext) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A30),
+        title: const Text('Slet familie?', style: TextStyle(color: Colors.white)),
+        content: const Text('Er du helt sikker? Dette sletter familien, samt alle belønninger og opgaver for altid. Medlemmerne slettes ikke, men de fjernes fra denne familie.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuller', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Slet', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    if (sheetContext.mounted) Navigator.pop(sheetContext); 
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      
+      final rewardsSnap = await FirebaseFirestore.instance.collection('families').doc(widget.familyId).collection('rewards').get();
+      for (var rewardDoc in rewardsSnap.docs) {
+        final tasksSnap = await rewardDoc.reference.collection('tasks').get();
+        for (var taskDoc in tasksSnap.docs) {
+          batch.delete(taskDoc.reference);
+        }
+        batch.delete(rewardDoc.reference);
+      }
+
+      final membersSnap = await FirebaseFirestore.instance.collection('members').where('familier', arrayContains: widget.familyId).get();
+      for (var memberDoc in membersSnap.docs) {
+        batch.update(memberDoc.reference, {
+          'familier': FieldValue.arrayRemove([widget.familyId])
+        });
+      }
+
+      final familyRef = FirebaseFirestore.instance.collection('families').doc(widget.familyId);
+      batch.delete(familyRef);
+
+      await batch.commit();
+
+      if (context.mounted) Navigator.pop(context);
+
+    } catch (e) {
+      debugPrint("Slette fejl af familie: $e");
+    }
+  }
 
   Future<void> _deleteReward(QueryDocumentSnapshot rewardDoc, BuildContext sheetContext) async {
     final confirm = await showDialog<bool>(
@@ -239,7 +426,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     if (confirm != true) return;
 
-    if (sheetContext.mounted) Navigator.pop(sheetContext); // Lukker popuppen korrekt
+    if (sheetContext.mounted) Navigator.pop(sheetContext); 
 
     try {
       final batch = FirebaseFirestore.instance.batch();
@@ -312,7 +499,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           filled: true, fillColor: const Color(0xFF2A2A30),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                         ),
-                        validator: (v) => v!.trim().isEmpty ? 'Feltet må ikke være tomt' : null,
+                        validator: (v) {
+                          if (v != null && v.trim().isNotEmpty && v.length > 100) return 'Maks 100 tegn';
+                          return null;
+                        },
                       ),
                       const SizedBox(height: 24),
                       Row(
@@ -452,8 +642,374 @@ class _DashboardScreenState extends State<DashboardScreen> {
 }
 
 // ==========================================
-// NYT: SELVSTÆNDIG REWARD-CARD WIDGET
-// Garanterer at elementets stream aldrig blandes sammen med de andres!
+// NY WIDGET: INDSTILLINGER FOR FAMILIEN (BottomSheet)
+// ==========================================
+class FamilySettingsSheet extends StatefulWidget {
+  final String familyId;
+  final String initialName;
+  final VoidCallback onDeleteFamily;
+
+  const FamilySettingsSheet({
+    super.key,
+    required this.familyId,
+    required this.initialName,
+    required this.onDeleteFamily,
+  });
+
+  @override
+  State<FamilySettingsSheet> createState() => _FamilySettingsSheetState();
+}
+
+class _FamilySettingsSheetState extends State<FamilySettingsSheet> {
+  late TextEditingController _nameCtrl;
+  bool _isSavingName = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: widget.initialName);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  // NYT: Hjælpefunktion til at vise notifikationer over popup'en!
+  void _showPopupMessage(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message, 
+          textAlign: TextAlign.center, 
+          style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)
+        ),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating, // Gør at den "svæver"
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // Ved at give den en kæmpe margin i bunden, skubber vi den helt op i toppen af skærmen!
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).size.height * 0.8, 
+          left: 24,
+          right: 24,
+        ),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _updateFamilyName() async {
+    final newName = _nameCtrl.text.trim();
+    if (newName.isEmpty || newName == widget.initialName) return;
+
+    setState(() => _isSavingName = true);
+    try {
+      await FirebaseFirestore.instance.collection('families').doc(widget.familyId).update({
+        'name': newName,
+      });
+      if (mounted) {
+        _showPopupMessage('Familienavn opdateret!', const Color(0xFF008D3D));
+      }
+    } catch (e) {
+      if (mounted) {
+        _showPopupMessage('Kunne ikke opdatere navn.', Colors.redAccent);
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingName = false);
+    }
+  }
+
+  Future<void> _removeMemberFromFamily(String memberId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF2A2A30),
+        title: const Text('Fjern medlem?', style: TextStyle(color: Colors.white)),
+        content: const Text('Dette fjerner medlemmet fra familien. Alle deres opgaver (og belønninger, hvis de var alene om dem) i denne familie vil også blive slettet.', style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuller', style: TextStyle(color: Colors.white54))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Fjern', style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+
+      // 1. Fjern medlemmet fra familien
+      final memberRef = FirebaseFirestore.instance.collection('members').doc(memberId);
+      batch.update(memberRef, {
+        'familier': FieldValue.arrayRemove([widget.familyId]),
+      });
+
+      // 2. Find og slet alle medlemmets opgaver, samt tjekke om belønningen derved bliver "tom"
+      final rewardsSnap = await FirebaseFirestore.instance.collection('families').doc(widget.familyId).collection('rewards').get();
+
+      for (var rewardDoc in rewardsSnap.docs) {
+        final tasksForMemberSnap = await rewardDoc.reference.collection('tasks').where('medlemId', isEqualTo: memberId).get();
+        
+        // Slet opgaverne
+        for (var taskDoc in tasksForMemberSnap.docs) {
+          batch.delete(taskDoc.reference);
+        }
+
+        // Tjek om der er andre opgaver tilbage på denne belønning.
+        // Hvis alle opgaver på belønningen tilhørte det slettede medlem, sletter vi også belønningen.
+        final allTasksSnap = await rewardDoc.reference.collection('tasks').get();
+        if (allTasksSnap.docs.length == tasksForMemberSnap.docs.length) {
+          batch.delete(rewardDoc.reference);
+        }
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        _showPopupMessage('Medlem fjernet og data opdateret.', const Color(0xFF008D3D));
+      }
+    } catch (e) {
+      debugPrint('Kunne ikke fjerne medlem: $e');
+      if (mounted) {
+        _showPopupMessage('Der opstod en fejl.', Colors.redAccent);
+      }
+    }
+  }
+
+  void _showAddMemberDialog() {
+    final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (addCtx) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.6,
+          decoration: const BoxDecoration(
+            color: Color(0xFF232227),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Tilføj medlem', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                  IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(addCtx)),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              Expanded(
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance.collection('members').where('oprettetAf', isEqualTo: currentUserUid).snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)));
+                    if (!snapshot.hasData) return const Center(child: Text('Ingen medlemmer fundet', style: TextStyle(color: Colors.white54)));
+
+                    final availableMembers = snapshot.data!.docs.where((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final List families = data['familier'] ?? [];
+                      return !families.contains(widget.familyId);
+                    }).toList();
+
+                    if (availableMembers.isEmpty) {
+                      return const Center(child: Text('Alle dine oprettede medlemmer er allerede i denne familie.', style: TextStyle(color: Colors.white54), textAlign: TextAlign.center));
+                    }
+
+                    return ListView.builder(
+                      itemCount: availableMembers.length,
+                      itemBuilder: (context, index) {
+                        final memberDoc = availableMembers[index];
+                        final data = memberDoc.data() as Map<String, dynamic>;
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: CircleAvatar(
+                            backgroundColor: Color(data['ikonFarve'] ?? Colors.grey.value),
+                            child: const Icon(Icons.person, color: Colors.white),
+                          ),
+                          title: Text(data['navn'] ?? 'Ukendt', style: const TextStyle(color: Colors.white)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.add_circle, color: Color(0xFF008D3D)),
+                            onPressed: () async {
+                              await FirebaseFirestore.instance.collection('members').doc(memberDoc.id).update({
+                                'familier': FieldValue.arrayUnion([widget.familyId])
+                              });
+                              if (context.mounted) Navigator.pop(addCtx);
+                            },
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(addCtx); 
+                    
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => OpretMedlemPopup(familyId: widget.familyId),
+                    );
+                  },
+                  icon: const Icon(Icons.person_add_alt_1, color: Color(0xFFFFD166)),
+                  label: const Text('Opret nyt medlem', style: TextStyle(color: Color(0xFFFFD166), fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFFFD166), width: 1.5),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF202024),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Familie indstillinger', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+                IconButton(icon: const Icon(Icons.close, color: Colors.white54), onPressed: () => Navigator.pop(context)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            
+            // --- SEKTION: RET NAVN ---
+            const Text('Familienavn', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _nameCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      filled: true, fillColor: const Color(0xFF2A2A30),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFFF6B35),
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                  ),
+                  onPressed: _isSavingName ? null : _updateFamilyName,
+                  child: _isSavingName 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                      : const Text('Gem', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            const Divider(color: Color(0xFF3F3F46), height: 1),
+            const SizedBox(height: 24),
+
+            // --- SEKTION: MEDLEMMER ---
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Medlemmer i familien', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                IconButton(
+                  icon: const Icon(Icons.person_add_alt_1, color: Color(0xFF008D3D)),
+                  onPressed: _showAddMemberDialog,
+                  tooltip: 'Tilføj medlem',
+                )
+              ],
+            ),
+            const SizedBox(height: 8),
+            
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('members').where('familier', arrayContains: widget.familyId).snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Padding(padding: EdgeInsets.all(20), child: Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35))));
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const Text('Ingen medlemmer i denne familie.', style: TextStyle(color: Colors.white54));
+
+                final members = snapshot.data!.docs;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2A2A30),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: members.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Color(data['ikonFarve'] ?? Colors.grey.value),
+                          child: const Icon(Icons.person, color: Colors.white),
+                        ),
+                        title: Text(data['navn'] ?? 'Ukendt', style: const TextStyle(color: Colors.white)),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.person_remove_rounded, color: Colors.redAccent),
+                          onPressed: () => _removeMemberFromFamily(doc.id),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+
+            const SizedBox(height: 32),
+            const Divider(color: Color(0xFF3F3F46), height: 1),
+            const SizedBox(height: 24),
+
+            // --- SEKTION: SLET FAMILIE ---
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: widget.onDeleteFamily,
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  side: const BorderSide(color: Colors.redAccent, width: 1.5),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: const Text('Slet familie', style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ==========================================
+// REWARD-CARD WIDGET
 // ==========================================
 class RewardCard extends StatefulWidget {
   final QueryDocumentSnapshot rewardDoc;
@@ -483,7 +1039,6 @@ class _RewardCardState extends State<RewardCard> {
   @override
   void initState() {
     super.initState();
-    // Streamen initialiseres KUN én gang pr. kort, præcis når kortet bliver vist
     _taskStream = widget.rewardDoc.reference.collection('tasks').snapshots();
   }
 
@@ -515,7 +1070,7 @@ class _RewardCardState extends State<RewardCard> {
           double earnedStars = 0;
           for (var doc in allTasks) {
             totalStars += (doc['antalGange'] ?? 1);
-            earnedStars += (doc['udfoertGange'] ?? 0);
+            earnedStars += (doc['udfoertGange'] ?? 0); 
           }
           if (totalStars > 0) progress = earnedStars / totalStars;
         }
@@ -526,12 +1081,18 @@ class _RewardCardState extends State<RewardCard> {
         if (widget.currentTab == 1 && !isCompleted) return const SizedBox.shrink(); 
 
         final filteredTasks = widget.selectedMemberId == 'Alle' 
-            ? allTasks 
+            ? allTasks.toList()
             : allTasks.where((t) => t['medlemId'] == widget.selectedMemberId).toList();
 
         if (widget.selectedMemberId != 'Alle' && filteredTasks.isEmpty) {
           return const SizedBox.shrink();
         }
+        
+        filteredTasks.sort((a, b) {
+          int pendingA = (a.data() as Map<String, dynamic>)['pendingGodkendelser'] ?? 0;
+          int pendingB = (b.data() as Map<String, dynamic>)['pendingGodkendelser'] ?? 0;
+          return pendingB.compareTo(pendingA); 
+        });
 
         return Container(
           margin: const EdgeInsets.only(bottom: 24),
@@ -552,7 +1113,7 @@ class _RewardCardState extends State<RewardCard> {
                       Expanded(
                         child: Text(
                           title, 
-                          maxLines: 1,
+                          maxLines: 1, 
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                         ),
@@ -613,14 +1174,25 @@ class _RewardCardState extends State<RewardCard> {
     final int done = taskData['udfoertGange'] ?? 0;
     final int total = taskData['antalGange'] ?? 1;
     final String memberId = taskData['medlemId'] ?? '';
-
+    
+    final int pending = taskData['pendingGodkendelser'] ?? 0;
+    final int activeCount = done + pending;
     final bool isCompleted = done >= total;
+
+    DismissDirection swipeDirection;
+    if (pending > 0) {
+      swipeDirection = DismissDirection.horizontal; 
+    } else if (isCompleted) {
+      swipeDirection = DismissDirection.endToStart; 
+    } else if (done > 0) {
+      swipeDirection = DismissDirection.horizontal; 
+    } else {
+      swipeDirection = DismissDirection.startToEnd; 
+    }
 
     return Dismissible(
       key: Key(taskDoc.id),
-      direction: isCompleted 
-        ? DismissDirection.endToStart 
-        : (done > 0 ? DismissDirection.horizontal : DismissDirection.startToEnd), 
+      direction: swipeDirection, 
       
       background: Container(
         color: const Color(0xFF008D3D), 
@@ -632,16 +1204,25 @@ class _RewardCardState extends State<RewardCard> {
         color: Colors.redAccent, 
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.undo, color: Colors.white),
+        child: Icon(pending > 0 ? Icons.close : Icons.undo, color: Colors.white), 
       ),
       
       confirmDismiss: (direction) async {
-        if (direction == DismissDirection.startToEnd) {
-          if (done < total) {
+        if (direction == DismissDirection.startToEnd) { 
+          if (pending > 0) {
+            await taskDoc.reference.update({
+              'pendingGodkendelser': pending - 1,
+              'udfoertGange': done + 1,
+            });
+          } else if (done < total) {
             await taskDoc.reference.update({'udfoertGange': done + 1});
           }
-        } else if (direction == DismissDirection.endToStart) {
-          if (done > 0) {
+        } else if (direction == DismissDirection.endToStart) { 
+          if (pending > 0) {
+            await taskDoc.reference.update({
+              'pendingGodkendelser': pending - 1,
+            });
+          } else if (done > 0) {
             await taskDoc.reference.update({'udfoertGange': done - 1});
           }
         }
@@ -673,6 +1254,17 @@ class _RewardCardState extends State<RewardCard> {
                         ),
                         const SizedBox(height: 4),
                         Text(desc, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        
+                        if (pending > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(Icons.pending_actions_rounded, color: Color(0xFFFFD166), size: 14),
+                              const SizedBox(width: 4),
+                              Text('Afventer godkendelse', style: const TextStyle(color: Color(0xFFFFD166), fontSize: 12)),
+                            ],
+                          ),
+                        ]
                       ],
                     ),
                   ),
@@ -681,11 +1273,15 @@ class _RewardCardState extends State<RewardCard> {
                     children: [
                       Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: List.generate(total, (i) => Icon(
-                          Icons.star_rounded, 
-                          size: 16, 
-                          color: i < done ? Colors.amber : Colors.white10
-                        )),
+                        children: List.generate(total, (i) {
+                          if (i < done) {
+                            return const Icon(Icons.star_rounded, size: 16, color: Colors.amber);
+                          } else if (i < activeCount) {
+                            return const Icon(Icons.schedule_rounded, size: 14, color: Color(0xFFFFD166)); 
+                          } else {
+                            return const Icon(Icons.star_rounded, size: 16, color: Colors.white10);
+                          }
+                        }),
                       ),
                       const SizedBox(height: 4),
                       FutureBuilder<DocumentSnapshot>(

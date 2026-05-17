@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive_flutter/hive_flutter.dart'; // NYT: Importeret Hive
+
 import '../screens/dashboard_screen.dart';
 import '../screens/opret_familie_screen.dart';
-import '../screens/profil.dart';
+import '../screens/profil_screen.dart';
 import '../screens/medlemmer_screen.dart';
 import '../screens/forside_screen.dart';
 import '../screens/login_screen.dart';
@@ -159,18 +161,32 @@ class AppDrawer extends StatelessWidget {
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Log ud', style: TextStyle(color: Colors.redAccent)),
             onTap: () async {
-              // 1. Lukker menuen
-              Navigator.pop(context); 
+              // 1. Tøm lokal hukommelse for børnedata, så de ikke logges automatisk ind igen
+              final box = Hive.box('authBox');
+              await box.clear();
               
-              // 2. Logger brugeren ud af Firebase
-              await FirebaseAuth.instance.signOut();
-              
-              // 3. Fjerner hele historikken og sender brugeren til Login-skærmen
+              // 2. Fjerner hele historikken og sender brugeren til Login-skærmen FØRST.
+              // Dette sikrer, at vi forlader Dashboardet og lukker for database-lytterne.
               if (context.mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
                   (Route<dynamic> route) => false, 
                 );
+              }
+
+              // Vi venter lige et halvt sekund, så skærmskiftet er helt færdigt
+              await Future.delayed(const Duration(milliseconds: 500));
+              
+              // 3. Ryd op i Firebase (Slet anonym bruger vs log ud for voksne)
+              if (isChild && currentUser != null) {
+                try {
+                  await currentUser.delete(); // Sletter brugeren helt
+                } catch (e) {
+                  debugPrint("Kunne ikke slette anonym bruger: $e");
+                  await FirebaseAuth.instance.signOut(); // Fallback
+                }
+              } else {
+                await FirebaseAuth.instance.signOut(); // Normal log ud for voksne
               }
             },
           ),

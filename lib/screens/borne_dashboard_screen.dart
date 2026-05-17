@@ -216,7 +216,8 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
           double earnedStars = 0;
           for (var doc in allTasks) {
             totalStars += (doc['antalGange'] ?? 1);
-            earnedStars += (doc['udfoertGange'] ?? 0);
+            // Procentbaren viser KUN de stjerner Admin har godkendt!
+            earnedStars += (doc['udfoertGange'] ?? 0); 
           }
           if (totalStars > 0) progress = earnedStars / totalStars;
         }
@@ -243,7 +244,6 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
           ),
           child: Column(
             children: [
-              // Kun Padding, ingen InkWell til redigering
               Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Row(
@@ -294,41 +294,52 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
     final int done = taskData['udfoertGange'] ?? 0;
     final int total = taskData['antalGange'] ?? 1;
     final String memberId = taskData['medlemId'] ?? '';
+    
+    // NYT: Hent hvor mange der venter på godkendelse
+    final int pending = taskData['pendingGodkendelser'] ?? 0;
 
-    final bool isCompleted = done >= total;
+    // Den samlede mængde 'handlinger' (udført + afventende)
+    final int activeCount = done + pending;
+    
+    // Opgaven kan ikke swipes mere mod højre, hvis de allerede har udført/sendt det antal gange de skal
+    final bool isFullyActioned = activeCount >= total;
 
     return Dismissible(
       key: Key(taskDoc.id),
-      direction: isCompleted 
+      direction: isFullyActioned 
         ? DismissDirection.endToStart 
-        : (done > 0 ? DismissDirection.horizontal : DismissDirection.startToEnd), 
+        : (activeCount > 0 ? DismissDirection.horizontal : DismissDirection.startToEnd), 
       
       background: Container(
         color: const Color(0xFF008D3D), 
         alignment: Alignment.centerLeft,
         padding: const EdgeInsets.only(left: 20),
-        child: const Icon(Icons.check, color: Colors.white),
+        child: const Icon(Icons.send_rounded, color: Colors.white), // NYT ikon: Send papirflyver!
       ),
       secondaryBackground: Container(
         color: Colors.redAccent, 
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.undo, color: Colors.white),
+        child: const Icon(Icons.undo, color: Colors.white), // Fortryd ikon
       ),
       
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          if (done < total) {
-            await taskDoc.reference.update({'udfoertGange': done + 1});
+          // Send Anmodning!
+          if (activeCount < total) {
+            await taskDoc.reference.update({'pendingGodkendelser': pending + 1});
           }
         } else if (direction == DismissDirection.endToStart) {
-          if (done > 0) {
+          // Fortryd anmodning (træk den tilbage) ELLER fortryd opgave
+          if (pending > 0) {
+            await taskDoc.reference.update({'pendingGodkendelser': pending - 1});
+          } else if (done > 0) {
             await taskDoc.reference.update({'udfoertGange': done - 1});
           }
         }
         return false; 
       },
-      child: Column( // InkWell er fjernet, så børn ikke kan trykke på opgaven for at rette den
+      child: Column( 
         children: [
           Padding(
             padding: const EdgeInsets.all(16.0),
@@ -346,12 +357,31 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
                         style: TextStyle(
                           color: Colors.white, 
                           fontSize: 15,
-                          decoration: isCompleted ? TextDecoration.lineThrough : null, 
+                          // Streg kun over teksten, hvis ADMIN har godkendt (eller hvis man vil strege over når det er sendt, brug 'isFullyActioned')
+                          decoration: isFullyActioned ? TextDecoration.lineThrough : null, 
                           decorationColor: Colors.white54
                         )
                       ),
                       const SizedBox(height: 4),
                       Text(desc, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                      
+                      // NYT: Den orange afventer-besked!
+                      if (pending > 0) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.pending_actions_rounded, color: Color(0xFFFFD166), size: 14),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                pending == 1 ? 'Anmodning sendt - afventer godkendelse' : '$pending anmodninger sendt', 
+                                style: const TextStyle(color: Color(0xFFFFD166), fontSize: 12, fontWeight: FontWeight.bold),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -360,11 +390,16 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
                   children: [
                     Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: List.generate(total, (i) => Icon(
-                        Icons.star_rounded, 
-                        size: 16, 
-                        color: i < done ? Colors.amber : Colors.white10
-                      )),
+                      children: List.generate(total, (i) {
+                        // Viser guldstjerne for godkendte, ur-ikon for afventende, og tom for ikke lavet.
+                        if (i < done) {
+                          return const Icon(Icons.star_rounded, size: 16, color: Colors.amber);
+                        } else if (i < done + pending) {
+                          return const Icon(Icons.schedule_rounded, size: 14, color: Color(0xFFFFD166)); // Ur ikon!
+                        } else {
+                          return const Icon(Icons.star_rounded, size: 16, color: Colors.white10);
+                        }
+                      }),
                     ),
                     const SizedBox(height: 4),
                     FutureBuilder<DocumentSnapshot>(

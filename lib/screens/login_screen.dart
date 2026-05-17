@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 import 'forside_screen.dart';
 import 'opret_bruger_screen.dart';
-import 'borne_dashboard_screen.dart'; // NYT: Husk at importere denne
+import 'borne_dashboard_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -81,6 +82,9 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // Gør Hive hukommelses-boksen klar
+      final box = Hive.box('authBox');
+
       // 1. LOG IND SOM ADMIN (EMAIL)
       if (loginId.contains('@')) {
         final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(email: loginId, password: password);
@@ -96,6 +100,9 @@ class _LoginScreenState extends State<LoginScreen> {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Profil mangler.'), backgroundColor: Colors.redAccent));
           return;
         }
+
+        // Slet evt. gammel børnedata i Hive, så systemet ved, det er en voksen nu
+        await box.delete('userType');
 
         if (!mounted) return;
         Navigator.pushReplacement(
@@ -121,20 +128,25 @@ class _LoginScreenState extends State<LoginScreen> {
           final memberDoc = querySnap.docs.first;
           final memberId = memberDoc.id;
           
-          // Hent familietilknytning (vi tager den første familie i listen)
+          // Hent familietilknytning
           final List<dynamic> families = memberDoc['familier'] ?? [];
           if (families.isEmpty) {
             throw Exception('Du er ikke tilknyttet en familie endnu.');
           }
           final String familyId = families.first;
 
-          // Hent familienavnet fra databasen
+          // Hent familienavnet
           final familySnap = await FirebaseFirestore.instance.collection('families').doc(familyId).get();
           final String familyName = familySnap.exists ? (familySnap.data()?['name'] ?? 'Min Familie') : 'Min Familie';
 
+          // NYT: Gem børne-info i lokal hukommelse med Hive
+          await box.put('userType', 'child');
+          await box.put('familyId', familyId);
+          await box.put('familyName', familyName);
+          await box.put('memberId', memberId);
+
           if (!mounted) return;
           
-          // NYT: Sender barnet direkte til deres eget Dashboard
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
