@@ -528,6 +528,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       const Divider(color: Color(0xFF3F3F46), height: 1),
                       const SizedBox(height: 24),
 
+                      // --- NY KNAP: KOPIER BELØNNING ---
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (ctx) => KopierBelonningSheet(
+                                familyId: widget.familyId, 
+                                rewardId: rewardDoc.id, 
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.emoji_events, color: Color(0xFF008D3D)),
+                          label: const Text('Kopier belønning', style: TextStyle(color: Color(0xFF008D3D), fontSize: 16, fontWeight: FontWeight.bold)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: const BorderSide(color: Color(0xFF008D3D), width: 1.5),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // --- SLET BELØNNING ---
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton(
@@ -542,6 +569,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const SizedBox(height: 16),
 
+                      // --- GEM ÆNDRINGER ---
                       SizedBox(
                         width: double.infinity,
                         height: 55,

@@ -21,16 +21,33 @@ class BorneDashboardScreen extends StatefulWidget {
 class _BorneDashboardScreenState extends State<BorneDashboardScreen> {
   int _currentTab = 0; 
   late Stream<QuerySnapshot> _rewardsStream;
+  late Stream<QuerySnapshot> _membersStream;
+  late Stream<QuerySnapshot> _pendingTasksStream;
+  late Stream<QuerySnapshot> _allTasksStream;
 
-  @override
+@override
   void initState() {
     super.initState();
-    // Henter familiens belønninger præcis ligesom hos de voksne
     _rewardsStream = FirebaseFirestore.instance
         .collection('families')
         .doc(widget.familyId)
         .collection('rewards')
         .orderBy('createdAt', descending: true)
+        .snapshots();
+
+    _membersStream = FirebaseFirestore.instance
+        .collection('members')
+        .where('familier', arrayContains: widget.familyId)
+        .snapshots();
+        
+    _pendingTasksStream = FirebaseFirestore.instance
+        .collectionGroup('tasks')
+        .where('pendingGodkendelser', isGreaterThan: 0)
+        .snapshots();
+
+    // NYT: Stream til at hente alle opgaver, så vi kan beregne stjerner/skattekister i toppen
+    _allTasksStream = FirebaseFirestore.instance
+        .collectionGroup('tasks')
         .snapshots();
   }
 
@@ -45,7 +62,10 @@ class _BorneDashboardScreenState extends State<BorneDashboardScreen> {
       bottomNavigationBar: _buildBottomTabs(),
       body: Column(
         children: [
-          const SizedBox(height: 16), // Lidt luft i toppen i stedet for filteret
+          const SizedBox(height: 16), 
+          
+          // HER KALDER VI STATISTIKKEN!
+          _buildMemberStats(),
           
           if (_currentTab == 1)
             const Padding(
@@ -75,7 +95,6 @@ class _BorneDashboardScreenState extends State<BorneDashboardScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   itemCount: rewardDocs.length,
                   itemBuilder: (context, index) {
-                    // Vi bruger en speciel 'ChildRewardCard' uden redigeringsmuligheder
                     return ChildRewardCard(
                       key: ValueKey(rewardDocs[index].id), 
                       rewardDoc: rewardDocs[index],
@@ -135,6 +154,120 @@ class _BorneDashboardScreenState extends State<BorneDashboardScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMemberStats() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _allTasksStream,
+      builder: (context, taskSnapshot) {
+        return StreamBuilder<QuerySnapshot>(
+          stream: _rewardsStream,
+          builder: (context, rewardSnapshot) {
+            // Vis ingenting indtil data er loadet
+            if (!taskSnapshot.hasData || !rewardSnapshot.hasData) {
+              return const SizedBox.shrink(); 
+            }
+
+            // Hent KUN de opgaver, der tilhører dette specifikke barn
+            final myTasks = taskSnapshot.data!.docs
+                .where((doc) => 
+                    doc.reference.path.contains(widget.familyId) &&
+                    (doc.data() as Map<String, dynamic>)['medlemId'] == widget.memberId)
+                .toList();
+            
+            final allFamilyRewards = rewardSnapshot.data!.docs;
+
+            int totalStars = 0;
+            int completedRewards = 0;
+
+            // 1. Grupper opgaverne ud fra deres belønnings-ID
+            Map<String, List<QueryDocumentSnapshot>> tasksByReward = {};
+            for (var t in myTasks) {
+              String rId = t.reference.parent.parent!.id;
+              if (!tasksByReward.containsKey(rId)) tasksByReward[rId] = [];
+              tasksByReward[rId]!.add(t);
+            }
+
+            // 2. Gennemgå alle belønninger for at regne ud, hvad barnet har opnået
+            for (var r in allFamilyRewards) {
+              double criteria = (r.data() as Map<String, dynamic>)['fuldfoertKriterie'] ?? 50.0;
+              var rTasks = tasksByReward[r.id] ?? [];
+
+              if (rTasks.isEmpty) continue;
+
+              int rTotalStars = 0;
+              int rEarnedStars = 0;
+              
+              for (var t in rTasks) {
+                final tData = t.data() as Map<String, dynamic>;
+                int tTotal = (tData['antalGange'] as num?)?.toInt() ?? 1;
+                int tDone = (tData['udfoertGange'] as num?)?.toInt() ?? 0;
+                
+                rTotalStars += tTotal;
+                rEarnedStars += tDone;
+                
+                // Læg til i den overordnede "Stjerner tjent" tæller
+                totalStars += tDone; 
+              }
+
+              // Tjek om denne specifikke belønning er låst op (Skattekiste)
+              if (rTotalStars > 0) {
+                double progress = rEarnedStars / rTotalStars;
+                if ((progress * 100) >= criteria) {
+                  completedRewards++;
+                }
+              }
+            }
+
+            // 3. Byg selve UI'et med to kasser
+            return Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A30),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFFFD166).withOpacity(0.4), width: 1.5),
+                      ),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.star_rounded, color: Color(0xFFFFD166), size: 36),
+                          const SizedBox(height: 8),
+                          Text('$totalStars', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                          const Text('Mine stjerner', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A30),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF008D3D).withOpacity(0.4), width: 1.5),
+                      ),
+                      child: Column(
+                        children: [
+                          const Icon(Icons.inventory_2_rounded, color: Color(0xFF008D3D), size: 32),
+                          const SizedBox(height: 12),
+                          Text('$completedRewards', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                          const Text('Mine kister', style: TextStyle(color: Colors.white54, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
