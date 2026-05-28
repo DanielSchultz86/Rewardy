@@ -163,7 +163,7 @@
       try {
         await signInWithEmailAndPassword(auth, e, p);
       } catch (err) {
-        errorMsg.innerText = "Forkert email eller adgangskode.";
+        errorMsg.innerText = "Forkert email eller adgangskode." + err.message;
       }
     });
 
