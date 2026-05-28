@@ -215,7 +215,6 @@
         const btnClass = isBlocked ? "btn-unlock" : "btn-lock";
         const btnText = isBlocked ? "Lås op" : "Lås";
         
-        // RETTELSE 1: Kigger nu først efter u.username
         const displayName = u.username || u.navn || u.displayName || 'Ukendt';
 
         const tr = document.createElement('tr');
@@ -261,7 +260,7 @@
       }
     };
 
-    // --- NY FUNKTION: HENT SPECIFIK BRUGERS DATA ---
+    // --- OPDATERET FUNKTION MED KORREKTE DATABASE-FELTER ---
     window.openUserModal = async (uid, username) => {
       document.getElementById('modal-title').innerText = `Data for ${username}`;
       document.getElementById('modal-uid').innerText = `UID: ${uid}`;
@@ -270,9 +269,8 @@
       userModal.classList.remove('hidden');
 
       try {
-        // VIGTIGT: Tjek at "adminId" er det felt i din families-kollektion, 
-        // der gemmer ID'et på den bruger der oprettede familien!
-        const famQuery = query(collection(db, 'families'), where('adminId', '==', uid));
+        // Tjekker nu i "admins" arrayet i stedet for et enkelt string-felt
+        const famQuery = query(collection(db, 'families'), where('admins', 'array-contains', uid));
         const famSnap = await getDocs(famQuery);
         
         let totalFams = famSnap.size;
@@ -280,19 +278,20 @@
         let totalRews = 0;
         let totalTasks = 0;
 
-        // Løb igennem alle brugerens familier for at tælle indhold
         for (const fDoc of famSnap.docs) {
           const famId = fDoc.id;
+          const famData = fDoc.data();
 
-          // Hent antal medlemmer knyttet til familien
-          const memSnap = await getCountFromServer(query(collection(db, 'members'), where('familier', 'array-contains', famId)));
-          totalMems += memSnap.data().count;
+          // Vi tæller blot ID'erne inde i 'members' arrayet
+          if (famData.members && Array.isArray(famData.members)) {
+            totalMems += famData.members.length;
+          }
 
           // Hent belønninger under familien
           const rewSnap = await getDocs(collection(db, `families/${famId}/rewards`));
           totalRews += rewSnap.size;
 
-          // Hent opgaver (kræver at vi løber belønningerne igennem)
+          // Hent opgaver 
           for (const rDoc of rewSnap.docs) {
             const tskSnap = await getCountFromServer(collection(db, `families/${famId}/rewards/${rDoc.id}/tasks`));
             totalTasks += tskSnap.data().count;
