@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rewardy Admin Dashboard</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #121214; color: #fff; margin: 0; padding: 20px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .hidden { display: none !important; }
+    
+    /* Login */
+    #login-section { max-width: 400px; margin: 100px auto; background: #232227; padding: 30px; border-radius: 12px; text-align: center; }
+    input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #3F3F46; background: #2A2A30; color: white; box-sizing: border-box; }
+    button { background-color: #CC5225; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; }
+    button:hover { background-color: #FF6B35; }
+    
+    /* Dashboard Stats */
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .header button { width: auto; background-color: #3F3F46; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+    .stat-card { background: #232227; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3F3F46; }
+    .stat-card h3 { margin: 0; color: #white54; font-size: 14px; }
+    .stat-card p { margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #008D3D; }
+
+    /* Table */
+    .controls { display: flex; gap: 10px; margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; background: #232227; border-radius: 12px; overflow: hidden; }
+    th, td { padding: 15px; text-align: left; border-bottom: 1px solid #3F3F46; }
+    th { background: #2A2A30; color: #FFD166; }
+    .btn-lock { background-color: #e63946; padding: 8px 16px; width: auto; }
+    .btn-unlock { background-color: #008D3D; padding: 8px 16px; width: auto; }
+    .status-locked { color: #e63946; font-weight: bold; }
+    .status-active { color: #008D3D; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div id="login-section">
+      <h2>Admin Login</h2>
+      <input type="email" id="email" placeholder="Admin Email">
+      <input type="password" id="password" placeholder="Adgangskode">
+      <button id="login-btn">Log ind</button>
+      <p id="login-error" style="color: #e63946; margin-top: 10px;"></p>
+    </div>
+
+    <div id="dashboard-section" class="hidden">
+      <div class="header">
+        <h2>Rewardy Admin</h2>
+        <button id="logout-btn">Log ud</button>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card"><h3>Brugere i alt</h3><p id="stat-users">...</p></div>
+        <div class="stat-card"><h3>Familier oprettet</h3><p id="stat-families">...</p></div>
+        <div class="stat-card"><h3>Medlemmer (Børn)</h3><p id="stat-members">...</p></div>
+        <div class="stat-card"><h3>Belønninger</h3><p id="stat-rewards">...</p></div>
+        <div class="stat-card"><h3>Opgaver i alt</h3><p id="stat-tasks">...</p></div>
+      </div>
+
+      <h3>Brugeradministration</h3>
+      <div class="controls">
+        <input type="text" id="search-input" placeholder="Søg efter navn, email eller UID..." style="max-width: 400px; margin: 0;">
+        <button id="search-btn" style="width: auto;">Søg</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Brugernavn</th>
+            <th>Email</th>
+            <th>UID</th>
+            <th>Status</th>
+            <th>Handling</th>
+          </tr>
+        </thead>
+        <tbody id="user-table-body">
+          </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, getDocs, doc, updateDoc, collectionGroup, getCountFromServer, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    // INDSÆT DIN FIREBASE CONFIG HER
+    const firebaseConfig = {
+      apiKey: "DIN_API_KEY",
+      authDomain: "DIT_PROJEKT.firebaseapp.com",
+      projectId: "DIT_PROJEKT",
+      storageBucket: "DIT_PROJEKT.appspot.com",
+      messagingSenderId: "ID",
+      appId: "APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+
+    // UI Elementer
+    const loginSec = document.getElementById('login-section');
+    const dashSec = document.getElementById('dashboard-section');
+    const tableBody = document.getElementById('user-table-body');
+
+    // Lyt efter Auth status
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        // Tjek om brugeren faktisk er admin (valgfrit: kræver et 'isAdmin' felt på user-dokumentet)
+        loginSec.classList.add('hidden');
+        dashSec.classList.remove('hidden');
+        loadDashboardData();
+      } else {
+        loginSec.classList.remove('hidden');
+        dashSec.classList.add('hidden');
+      }
+    });
+
+    // Login
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const e = document.getElementById('email').value;
+      const p = document.getElementById('password').value;
+      try {
+        await signInWithEmailAndPassword(auth, e, p);
+      } catch (err) {
+        document.getElementById('login-error').innerText = "Forkert email eller kode.";
+      }
+    });
+
+    // Log ud
+    document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+    // Hent Data
+    async function loadDashboardData() {
+      try {
+        // 1. Tæl statistik med getCountFromServer (Billigt og hurtigt!)
+        const usersCount = await getCountFromServer(collection(db, 'users'));
+        document.getElementById('stat-users').innerText = usersCount.data().count;
+
+        const familiesCount = await getCountFromServer(collection(db, 'families'));
+        document.getElementById('stat-families').innerText = familiesCount.data().count;
+
+        const membersCount = await getCountFromServer(collection(db, 'members'));
+        document.getElementById('stat-members').innerText = membersCount.data().count;
+
+        const rewardsCount = await getCountFromServer(collectionGroup(db, 'rewards'));
+        document.getElementById('stat-rewards').innerText = rewardsCount.data().count;
+
+        const tasksCount = await getCountFromServer(collectionGroup(db, 'tasks'));
+        document.getElementById('stat-tasks').innerText = tasksCount.data().count;
+
+        // 2. Hent brugerliste
+        loadUsers();
+      } catch (error) {
+        console.error("Fejl ved hentning af data:", error);
+      }
+    }
+
+    // Indlæs brugere til tabellen
+    window.allUsersData = []; // Gemmer dem lokalt til søgning
+    async function loadUsers() {
+      const q = query(collection(db, "users"));
+      const querySnapshot = await getDocs(q);
+      window.allUsersData = [];
+      
+      querySnapshot.forEach((doc) => {
+        window.allUsersData.push({ id: doc.id, ...doc.data() });
+      });
+      renderTable(window.allUsersData);
+    }
+
+    function renderTable(users) {
+      tableBody.innerHTML = "";
+      users.forEach(u => {
+        const isBlocked = u.isBlocked === true;
+        const statusText = isBlocked ? "LÅST" : "Aktiv";
+        const statusClass = isBlocked ? "status-locked" : "status-active";
+        const btnClass = isBlocked ? "btn-unlock" : "btn-lock";
+        const btnText = isBlocked ? "Lås op" : "Lås bruger";
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${u.navn || u.displayName || 'Ukendt'}</td>
+          <td>${u.email || '-'}</td>
+          <td style="font-size: 12px; color: #888;">${u.id}</td>
+          <td class="${statusClass}">${statusText}</td>
+          <td>
+            <button class="${btnClass}" onclick="toggleUserLock('${u.id}', ${isBlocked})">${btnText}</button>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    }
+
+    // Søgefunktion
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const filtered = window.allUsersData.filter(u => 
+        (u.navn && u.navn.toLowerCase().includes(term)) ||
+        (u.email && u.email.toLowerCase().includes(term)) ||
+        (u.id.toLowerCase().includes(term))
+      );
+      renderTable(filtered);
+    });
+
+    // Lås / Lås op funktion (Gøres global for at kunne kaldes fra HTML knappen)
+    window.toggleUserLock = async (uid, currentlyBlocked) => {
+      const reason = currentlyBlocked ? "" : prompt("Hvorfor skal brugeren låses?");
+      if (!currentlyBlocked && reason === null) return; // Annulleret
+
+      try {
+        const userRef = doc(db, "users", uid);
+        await updateDoc(userRef, {
+          isBlocked: !currentlyBlocked,
+          lockedAt: !currentlyBlocked ? new Date() : null,
+          lockedBy: !currentlyBlocked ? currentUser.uid : null,
+          lockReason: !currentlyBlocked ? reason : null
+        });
+        
+        // Genindlæs listen for at vise opdateringen
+        loadUsers();
+      } catch (error) {
+        alert("Der opstod en fejl: " + error.message);
+      }
+    };
+  </script>
+</body>
+</html>
