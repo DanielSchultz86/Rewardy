@@ -18,10 +18,12 @@
     /* Dashboard Stats */
     .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
     .header button { width: auto; background-color: #3F3F46; }
-    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 40px; }
     .stat-card { background: #232227; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3F3F46; }
     .stat-card h3 { margin: 0; color: white; font-size: 14px; opacity: 0.6; }
     .stat-card p { margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #008D3D; }
+    /* Lidt mindre tekst til gæsteboksen, da vi skriver "Kræver backend" */
+    .stat-card .small-text { font-size: 16px; color: #FFD166; padding-top: 10px; }
 
     /* Table */
     .controls { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -66,6 +68,7 @@
         <div class="stat-card"><h3>Brugere i alt</h3><p id="stat-users">...</p></div>
         <div class="stat-card"><h3>Familier oprettet</h3><p id="stat-families">...</p></div>
         <div class="stat-card"><h3>Medlemmer (Børn)</h3><p id="stat-members">...</p></div>
+        <div class="stat-card"><h3>Gæstebrugere (Auth)</h3><p id="stat-guests" class="small-text">...</p></div>
         <div class="stat-card"><h3>Belønninger</h3><p id="stat-rewards">...</p></div>
         <div class="stat-card"><h3>Opgaver i alt</h3><p id="stat-tasks">...</p></div>
       </div>
@@ -179,6 +182,11 @@
 
         const tasksCount = await getCountFromServer(collectionGroup(db, 'tasks'));
         document.getElementById('stat-tasks').innerText = tasksCount.data().count;
+
+        // VIGTIGT VEDR. GÆSTEBRUGERE:
+        // Client SDK (Web) kan ikke hente antal Auth-brugere af sikkerhedshensyn.
+        // Det kræver en Cloud Function via Firebase Admin SDK.
+        document.getElementById('stat-guests').innerText = "Kræver backend";
 
         loadUsers();
       } catch (error) {
