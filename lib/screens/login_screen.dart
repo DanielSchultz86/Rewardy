@@ -82,7 +82,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Gør Hive hukommelses-boksen klar
       final box = Hive.box('authBox');
 
       // 1. LOG IND SOM ADMIN (EMAIL)
@@ -92,8 +91,11 @@ class _LoginScreenState extends State<LoginScreen> {
         
         if (uid == null) throw Exception('Login fejlede.');
 
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-
+final userDoc = await FirebaseFirestore.instance
+    .collection('users')
+    .doc(uid)
+    .get(const GetOptions(source: Source.server));
+    
         if (!userDoc.exists) {
           await FirebaseAuth.instance.signOut();
           if (!mounted) return;
@@ -101,7 +103,28 @@ class _LoginScreenState extends State<LoginScreen> {
           return;
         }
 
-        // Slet evt. gammel børnedata i Hive, så systemet ved, det er en voksen nu
+        // --- NYT: TJEK OM BRUGER ER LÅST ---
+        final userData = userDoc.data();
+        if (userData != null && userData['isBlocked'] == true) {
+          // Log straks ud igen
+          await FirebaseAuth.instance.signOut();
+          
+          if (!mounted) return;
+          
+          // Hent evt. den årsag vi indtastede på dashboardet
+          final lockReason = userData['lockReason'] ?? 'Kontakt administratoren for mere information.';
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Din konto er låst.\nÅrsag: $lockReason'), 
+              backgroundColor: Colors.redAccent,
+              duration: const Duration(seconds: 5),
+            )
+          );
+          return; // Stop login her!
+        }
+        // -----------------------------------
+
         await box.delete('userType');
 
         if (!mounted) return;
@@ -112,7 +135,6 @@ class _LoginScreenState extends State<LoginScreen> {
       } 
       // 2. LOG IND SOM MEDLEM (UNIK KODE)
       else {
-        // Giver læse-adgang hvis ikke logget ind
         if (FirebaseAuth.instance.currentUser == null) {
           await FirebaseAuth.instance.signInAnonymously();
         }
@@ -128,18 +150,15 @@ class _LoginScreenState extends State<LoginScreen> {
           final memberDoc = querySnap.docs.first;
           final memberId = memberDoc.id;
           
-          // Hent familietilknytning
           final List<dynamic> families = memberDoc['familier'] ?? [];
           if (families.isEmpty) {
             throw Exception('Du er ikke tilknyttet en familie endnu.');
           }
           final String familyId = families.first;
 
-          // Hent familienavnet
           final familySnap = await FirebaseFirestore.instance.collection('families').doc(familyId).get();
           final String familyName = familySnap.exists ? (familySnap.data()?['name'] ?? 'Min Familie') : 'Min Familie';
 
-          // NYT: Gem børne-info i lokal hukommelse med Hive
           await box.put('userType', 'child');
           await box.put('familyId', familyId);
           await box.put('familyName', familyName);

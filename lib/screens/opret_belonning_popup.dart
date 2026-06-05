@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class OpretBelonningPopup extends StatefulWidget {
   final String familyId;
   final String? rewardId;
-  final QueryDocumentSnapshot? taskDoc; // Bruges når vi skal redigere en specifik opgave
+  final QueryDocumentSnapshot? taskDoc; 
 
   const OpretBelonningPopup({
     super.key, 
@@ -34,47 +34,64 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   int _taskRepetitions = 1;
   List<String> _selectedMembers = [];
 
+  // --- MATEMATIK DATA ---
+  bool _isMathTask = false;
+  String _mathLevel = 'Let';
+  int _mathProblemCount = 12;
+  double _mathPassCriteria = 80.0;
+  final Map<String, bool> _mathTypes = {'Plus': true, 'Minus': false, 'Gange': false};
+
   // --- HUSKE-VARIABLER TIL AT TJEKKE UGEMTE ÆNDRINGER ---
   String _initTaskName = '';
   String _initTaskDesc = '';
   bool _initIsMandatory = false;
   int _initTaskRepetitions = 1;
   List<String> _initSelectedMembers = [];
+  bool _initIsMathTask = false;
 
   // --- DATA FRA DATABASE ---
   List<Map<String, dynamic>> _familyMembers = [];
   bool _isLoadingMembers = true;
   bool _isSaving = false;
-  String? _existingRewardMemberId; // Gemmer ejeren af belønningen, hvis vi tilføjer en ny opgave
+  String? _existingRewardMemberId; 
 
   @override
   void initState() {
     super.initState();
     
-    // Hop direkte til Trin 2 (Opgaver), hvis vi har et rewardId eller taskDoc
     if (widget.rewardId != null || widget.taskDoc != null) {
       _currentStep = 2;
     }
 
-    // Hvis vi er i REDIGER mode, så udfyld felterne automatisk og gem start-værdier
     if (widget.taskDoc != null) {
       final data = widget.taskDoc!.data() as Map<String, dynamic>;
       
-      // Sæt start-værdierne til at tjekke ugemte ændringer senere
       _initTaskName = data['navn'] ?? '';
       _initTaskDesc = data['beskrivelse'] ?? '';
       _initIsMandatory = data['erMandatory'] ?? false;
       _initTaskRepetitions = data['antalGange'] ?? 1;
       _initSelectedMembers = [data['medlemId']];
+      _initIsMathTask = data['isMathTask'] ?? false;
 
-      // Udfyld formen
       _taskNameCtrl.text = _initTaskName;
       _taskDescCtrl.text = _initTaskDesc;
       _isMandatory = _initIsMandatory;
       _taskRepetitions = _initTaskRepetitions;
       _selectedMembers = List.from(_initSelectedMembers); 
+      _isMathTask = _initIsMathTask;
+
+      if (_isMathTask) {
+        _mathLevel = data['mathLevel'] ?? 'Let';
+        _mathProblemCount = data['mathProblemCount'] ?? 12;
+        _mathPassCriteria = (data['mathPassCriteria'] ?? 80.0).toDouble();
+        if (data['mathTypes'] != null) {
+          final types = data['mathTypes'] as Map<String, dynamic>;
+          _mathTypes['Plus'] = types['Plus'] ?? true;
+          _mathTypes['Minus'] = types['Minus'] ?? false;
+          _mathTypes['Gange'] = types['Gange'] ?? false;
+        }
+      }
     } else if (widget.rewardId != null) {
-      // Hvis vi TILFØJER en ny opgave til en eksisterende belønning, skal vi finde ud af, hvem belønningen tilhører
       _fetchExistingRewardMember();
     }
 
@@ -129,7 +146,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     }
   }
 
-  // --- VALIDERINGER ---
   String? _validateNavn(String? value, int maxLength) {
     if (value == null || value.trim().isEmpty) return 'Feltet må ikke være tomt';
     if (value.trim().length > maxLength) return 'Maks $maxLength tegn';
@@ -156,6 +172,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                        _taskDescCtrl.text.trim() != _initTaskDesc ||
                        _isMandatory != _initIsMandatory ||
                        _taskRepetitions != _initTaskRepetitions ||
+                       _isMathTask != _initIsMathTask ||
                        currentMembers != initialMembers;
 
     if (widget.taskDoc != null || widget.rewardId != null) {
@@ -188,7 +205,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     return shouldPop ?? false;
   }
 
-  // --- FUNKTION: KOPIER OPGAVE ---
   void _showKopierOpgave() {
     showModalBottomSheet(
       context: context,
@@ -204,7 +220,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     );
   }
 
-  // --- FUNKTION: Slet Opgave ---
   Future<void> _deleteTask() async {
     final confirm = await showDialog<bool>(
       useRootNavigator: true,
@@ -268,18 +283,22 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       final db = FirebaseFirestore.instance;
       final batch = db.batch();
 
-      // SCENARIE 1: Vi redigerer en eksisterende opgave
+      Map<String, dynamic> taskData = {
+        'navn': _taskNameCtrl.text.trim(),
+        'beskrivelse': _taskDescCtrl.text.trim(),
+        'erMandatory': _isMandatory,
+        'antalGange': _isMathTask ? 1 : _taskRepetitions, // Matematik tæller altid som 1 stor opgave
+        'isMathTask': _isMathTask,
+        if (_isMathTask) 'mathLevel': _mathLevel,
+        if (_isMathTask) 'mathProblemCount': _mathProblemCount,
+        if (_isMathTask) 'mathPassCriteria': _mathPassCriteria,
+        if (_isMathTask) 'mathTypes': _mathTypes,
+      };
+
       if (widget.taskDoc != null) {
         final originalMemberId = widget.taskDoc!['medlemId'];
-        
-        batch.update(widget.taskDoc!.reference, {
-          'navn': _taskNameCtrl.text.trim(),
-          'beskrivelse': _taskDescCtrl.text.trim(),
-          'erMandatory': _isMandatory,
-          'antalGange': _taskRepetitions,
-        });
+        batch.update(widget.taskDoc!.reference, taskData);
 
-        // Hent info om den belønning opgaven ligger i
         final String rId = widget.rewardId ?? widget.taskDoc!.reference.parent.parent!.id;
         final originalRewardSnap = await db.collection('families').doc(widget.familyId).collection('rewards').doc(rId).get();
         final Map<String, dynamic>? rewardData = originalRewardSnap.data();
@@ -288,7 +307,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         final String rewardDesc = rewardData?['beskrivelse'] ?? '';
         final double completionCriteria = (rewardData?['fuldfoertKriterie'] ?? 50.0).toDouble();
 
-        // TJEK: Hvilke af de valgte medlemmer har i forvejen en belønning med dette navn?
         final sameNameRewardsSnap = await db.collection('families').doc(widget.familyId).collection('rewards').where('navn', isEqualTo: rewardName).get();
         Map<String, String> existingMemberRewards = {};
         for (var rewDoc in sameNameRewardsSnap.docs) {
@@ -305,7 +323,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
           if (memberId != originalMemberId) {
              DocumentReference newRewardRef;
 
-             // Har medlemmet allerede belønningen?
              if (existingMemberRewards.containsKey(memberId)) {
                 newRewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(existingMemberRewards[memberId]);
              } else {
@@ -320,10 +337,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
 
             final newTaskRef = newRewardRef.collection('tasks').doc();
             batch.set(newTaskRef, {
-              'navn': _taskNameCtrl.text.trim(),
-              'beskrivelse': _taskDescCtrl.text.trim(),
-              'erMandatory': _isMandatory,
-              'antalGange': _taskRepetitions,
+              ...taskData,
               'udfoertGange': 0,
               'medlemId': memberId,
               'createdAt': FieldValue.serverTimestamp(),
@@ -331,22 +345,16 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
           }
         }
       } 
-      // SCENARIE 2: Vi tilføjer en NY opgave til en eksisterende belønning
       else if (widget.rewardId != null) {
         final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc(widget.rewardId);
-        
         final taskRef = rewardRef.collection('tasks').doc();
         batch.set(taskRef, {
-          'navn': _taskNameCtrl.text.trim(),
-          'beskrivelse': _taskDescCtrl.text.trim(),
-          'erMandatory': _isMandatory,
-          'antalGange': _taskRepetitions,
+          ...taskData,
           'udfoertGange': 0,
           'medlemId': _existingRewardMemberId ?? _selectedMembers.first, 
           'createdAt': FieldValue.serverTimestamp(),
         });
       } 
-      // SCENARIE 3: Vi opretter en helt ny belønning
       else {
         for (String memberId in _selectedMembers) {
           final rewardRef = db.collection('families').doc(widget.familyId).collection('rewards').doc();
@@ -359,10 +367,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
 
           final taskRef = rewardRef.collection('tasks').doc();
           batch.set(taskRef, {
-            'navn': _taskNameCtrl.text.trim(),
-            'beskrivelse': _taskDescCtrl.text.trim(),
-            'erMandatory': _isMandatory,
-            'antalGange': _taskRepetitions,
+            ...taskData,
             'udfoertGange': 0,
             'medlemId': memberId,
             'createdAt': FieldValue.serverTimestamp(),
@@ -394,8 +399,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
 
   @override
   Widget build(BuildContext context) {
-    // Vi viser kun medlemsvalg, når vi opretter en HELT NY belønning (Trin 1 -> Trin 2)
-    // Når vi redigerer (taskDoc != null) eller tilføjer til eksisterende (rewardId != null), skjules det.
     bool showMemberSelection = (widget.rewardId == null && widget.taskDoc == null);
 
     return PopScope(
@@ -570,39 +573,185 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
           ),
           
           const SizedBox(height: 24),
+          Opacity(
+            opacity: _isMathTask ? 0.3 : 1.0,
+            child: IgnorePointer(
+              ignoring: _isMathTask,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildLabel('Antal gange'),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFF6B35), width: 1.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove, color: Colors.black),
+                          onPressed: () {
+                            if (_taskRepetitions > 1) setState(() => _taskRepetitions--);
+                          },
+                        ),
+                        Text('$_taskRepetitions', style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
+                        IconButton(
+                          icon: const Icon(Icons.add, color: Colors.black),
+                          onPressed: () {
+                            if (_taskRepetitions < 7) setState(() => _taskRepetitions++);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          const Divider(color: Color(0xFF3F3F46), height: 1),
+          const SizedBox(height: 8),
+
+          // --- MATEMATIK OPGAVE TOGGLE ---
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildLabel('Antal gange'),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFFF6B35), width: 1.5),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove, color: Colors.black),
-                      onPressed: () {
-                        if (_taskRepetitions > 1) setState(() => _taskRepetitions--);
-                      },
-                    ),
-                    Text('$_taskRepetitions', style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
-                    IconButton(
-                      icon: const Icon(Icons.add, color: Colors.black),
-                      onPressed: () {
-                        if (_taskRepetitions < 7) setState(() => _taskRepetitions++);
-                      },
-                    ),
-                  ],
-                ),
+              Row(
+                children: [
+                  const Icon(Icons.calculate_rounded, color: Colors.white, size: 28),
+                  const SizedBox(width: 8),
+                  _buildLabel('Matematik opgave'),
+                ],
+              ),
+              Switch(
+                value: _isMathTask,
+                activeColor: const Color(0xFF008D3D), // Grøn farve for at skille sig lidt ud
+                onChanged: (val) => setState(() => _isMathTask = val),
               ),
             ],
           ),
+
+          // --- MATEMATIK INDSTILLINGER ---
+          if (_isMathTask) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A2A30),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFF008D3D).withOpacity(0.5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildLabel('Niveau'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: ['Let', 'Øvet', 'Svær'].map((level) {
+                      final isSelected = _mathLevel == level;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: Text(level),
+                          selected: isSelected,
+                          selectedColor: const Color(0xFF008D3D).withOpacity(0.3),
+                          backgroundColor: const Color(0xFF3F3F46),
+                          labelStyle: TextStyle(color: isSelected ? const Color(0xFF008D3D) : Colors.white70, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal),
+                          side: BorderSide(color: isSelected ? const Color(0xFF008D3D) : Colors.transparent),
+                          onSelected: (selected) {
+                            if (selected) setState(() => _mathLevel = level);
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildLabel('Antal regnestykker'),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3F3F46),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove, color: Colors.white),
+                              onPressed: () {
+                                if (_mathProblemCount > 3) setState(() => _mathProblemCount--);
+                              },
+                            ),
+                            Text('$_mathProblemCount', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                            IconButton(
+                              icon: const Icon(Icons.add, color: Colors.white),
+                              onPressed: () {
+                                if (_mathProblemCount < 100) setState(() => _mathProblemCount++);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _buildLabel('Fuldført kriterie'),
+                      Text('${_mathPassCriteria.toInt()}% korrekt', style: const TextStyle(color: Color(0xFF008D3D), fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: const Color(0xFF008D3D),
+                      inactiveTrackColor: const Color(0xFF3F3F46),
+                      thumbColor: const Color(0xFF008D3D),
+                      trackHeight: 4.0,
+                    ),
+                    child: Slider(
+                      value: _mathPassCriteria,
+                      min: 0, max: 100, divisions: 20,
+                      onChanged: (val) => setState(() => _mathPassCriteria = val),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  _buildLabel('Type (Vælg mindst én)'),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 12,
+                    children: _mathTypes.keys.map((type) {
+                      return FilterChip(
+                        label: Text(type),
+                        selected: _mathTypes[type]!,
+                        selectedColor: const Color(0xFF008D3D).withOpacity(0.3),
+                        backgroundColor: const Color(0xFF3F3F46),
+                        checkmarkColor: const Color(0xFF008D3D),
+                        labelStyle: TextStyle(color: _mathTypes[type]! ? const Color(0xFF008D3D) : Colors.white70),
+                        side: BorderSide(color: _mathTypes[type]! ? const Color(0xFF008D3D) : Colors.transparent),
+                        onSelected: (val) {
+                          setState(() {
+                            // Sørg for at mindst én er valgt
+                            if (!val && _mathTypes.values.where((v) => v).length == 1) return;
+                            _mathTypes[type] = val;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          ],
           
-          // SKJULER MEDLEMSVALG HVIS VI RETTER EN OPGAVE ELLER TILFØJER TIL EKSISTERENDE BELØNNING
           if (showMemberSelection && _familyMembers.isNotEmpty) ...[
             const SizedBox(height: 32),
             _buildLabel('Tildel belønning og opgave til:'),
@@ -662,13 +811,11 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
               ),
           ],
 
-          // KNAPPER DER KUN VISES NÅR MAN REDIGERER EN OPGAVE (Kopier & Slet)
           if (widget.taskDoc != null) ...[
             const SizedBox(height: 32),
             const Divider(color: Color(0xFF3F3F46), height: 1),
             const SizedBox(height: 24),
             
-            // KOPIER OPGAVE KNAP
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -684,7 +831,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
             ),
             const SizedBox(height: 16),
 
-            // SLET KNAP
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(

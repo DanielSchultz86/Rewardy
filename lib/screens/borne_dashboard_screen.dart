@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/app_drawer.dart';
+import 'mat_opg_popup.dart';
 
 class BorneDashboardScreen extends StatefulWidget {
   final String familyId;
@@ -677,8 +678,14 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
         (taskData['pendingGodkendelser'] as num?)?.toInt() ?? 0;
 
     final int activeCount = done + pending;
-
     final bool isFullyActioned = activeCount >= total;
+
+    // --- MATEMATIK VARIABLER ---
+    final bool isMathTask = taskData['isMathTask'] == true;
+    final String mathLevel = taskData['mathLevel'] ?? 'Let';
+    final int mathProblemCount = taskData['mathProblemCount'] ?? 12;
+    final double mathPassCriteria = (taskData['mathPassCriteria'] as num?)?.toDouble() ?? 80.0;
+    final Map<String, dynamic> mathTypes = taskData['mathTypes'] ?? {'Plus': true};
 
     return Dismissible(
       key: Key(taskDoc.id),
@@ -707,6 +714,18 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
+          // SIKKERHED: Hvis det er en matematik-opgave, må den IKKE swipes til at være færdig!
+          if (isMathTask && activeCount < total) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Tryk på opgaven for at spille matematik-spillet!', style: TextStyle(color: Colors.white)),
+                backgroundColor: Color(0xFFFF6B35),
+                duration: Duration(seconds: 2),
+              ),
+            );
+            return false; // Blokerer swipet
+          }
+
           if (activeCount < total) {
             await taskDoc.reference.update({
               'pendingGodkendelser': pending + 1,
@@ -726,148 +745,178 @@ class _ChildRewardCardState extends State<ChildRewardCard> {
 
         return false;
       },
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          decoration:
-                              isFullyActioned ? TextDecoration.lineThrough : null,
-                          decorationColor: Colors.white54,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        desc,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white54,
-                          fontSize: 12,
-                        ),
-                      ),
-                      if (pending > 0) ...[
-                        const SizedBox(height: 8),
+      child: InkWell(
+        // ÅBEN POPUP NÅR DER TRYKKE PÅ OPGAVEN
+        onTap: () {
+          if (isMathTask && !isFullyActioned) {
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (ctx) => MatOpgPopup(
+                taskRef: taskDoc.reference,
+                level: mathLevel,
+                problemCount: mathProblemCount,
+                passCriteria: mathPassCriteria,
+                activeTypes: mathTypes,
+              ),
+            );
+          }
+        },
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Row(
                           children: [
-                            const Icon(
-                              Icons.pending_actions_rounded,
-                              color: Color(0xFFFFD166),
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
+                            Flexible(
                               child: Text(
-                                pending == 1
-                                    ? 'Anmodning sendt - afventer godkendelse'
-                                    : '$pending anmodninger sendt',
-                                style: const TextStyle(
-                                  color: Color(0xFFFFD166),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                name,
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  decoration:
+                                      isFullyActioned ? TextDecoration.lineThrough : null,
+                                  decorationColor: Colors.white54,
+                                ),
                               ),
                             ),
+                            // LILLE IKON SÅ BARNET KAN SE DET ER ET SPIL
+                            if (isMathTask) ...[
+                              const SizedBox(width: 6),
+                              const Icon(Icons.calculate_rounded, color: Color(0xFF008D3D), size: 18),
+                            ],
                           ],
                         ),
+                        const SizedBox(height: 4),
+                        Text(
+                          desc,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 12,
+                          ),
+                        ),
+                        if (pending > 0) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.pending_actions_rounded,
+                                color: Color(0xFFFFD166),
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  pending == 1
+                                      ? 'Anmodning sendt - afventer godkendelse'
+                                      : '$pending anmodninger sendt',
+                                  style: const TextStyle(
+                                    color: Color(0xFFFFD166),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: List.generate(total, (index) {
+                          if (index < done) {
+                            return const Icon(
+                              Icons.star_rounded,
+                              size: 16,
+                              color: Colors.amber,
+                            );
+                          } else if (index < done + pending) {
+                            return const Icon(
+                              Icons.schedule_rounded,
+                              size: 14,
+                              color: Color(0xFFFFD166),
+                            );
+                          } else {
+                            return const Icon(
+                              Icons.star_rounded,
+                              size: 16,
+                              color: Colors.white10,
+                            );
+                          }
+                        }),
+                      ),
+                      const SizedBox(height: 4),
+                      FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        future: FirebaseFirestore.instance
+                            .collection('members')
+                            .doc(memberId)
+                            .get(),
+                        builder: (context, memberSnap) {
+                          final memberData = memberSnap.data?.data();
+
+                          final memberName =
+                              memberData?['navn']?.split(' ')[0] ?? '...';
+
+                          final int colorVal =
+                              (memberData?['ikonFarve'] as num?)?.toInt() ??
+                                  Colors.grey.value;
+
+                          return Column(
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundColor: Color(colorVal),
+                                child: const Icon(
+                                  Icons.person,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                memberName,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: List.generate(total, (index) {
-                        if (index < done) {
-                          return const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Colors.amber,
-                          );
-                        } else if (index < done + pending) {
-                          return const Icon(
-                            Icons.schedule_rounded,
-                            size: 14,
-                            color: Color(0xFFFFD166),
-                          );
-                        } else {
-                          return const Icon(
-                            Icons.star_rounded,
-                            size: 16,
-                            color: Colors.white10,
-                          );
-                        }
-                      }),
-                    ),
-                    const SizedBox(height: 4),
-                    FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                      future: FirebaseFirestore.instance
-                          .collection('members')
-                          .doc(memberId)
-                          .get(),
-                      builder: (context, memberSnap) {
-                        final memberData = memberSnap.data?.data();
-
-                        final memberName =
-                            memberData?['navn']?.split(' ')[0] ?? '...';
-
-                        final int colorVal =
-                            (memberData?['ikonFarve'] as num?)?.toInt() ??
-                                Colors.grey.value;
-
-                        return Column(
-                          children: [
-                            CircleAvatar(
-                              radius: 12,
-                              backgroundColor: Color(colorVal),
-                              child: const Icon(
-                                Icons.person,
-                                size: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              memberName,
-                              style: const TextStyle(
-                                color: Colors.white70,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 4),
-              ],
+                  const SizedBox(width: 4),
+                ],
+              ),
             ),
-          ),
-          if (!isLast)
-            const Divider(
-              color: Color(0xFF3F3F46),
-              height: 1,
-              indent: 16,
-              endIndent: 16,
-            ),
-        ],
+            if (!isLast)
+              const Divider(
+                color: Color(0xFF3F3F46),
+                height: 1,
+                indent: 16,
+                endIndent: 16,
+              ),
+          ],
+        ),
       ),
     );
   }
