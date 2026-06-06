@@ -22,8 +22,6 @@
     .stat-card { background: #232227; padding: 20px; border-radius: 12px; text-align: center; border: 1px solid #3F3F46; }
     .stat-card h3 { margin: 0; color: white; font-size: 14px; opacity: 0.6; }
     .stat-card p { margin: 10px 0 0 0; font-size: 32px; font-weight: bold; color: #008D3D; }
-    /* Lidt mindre tekst til gæsteboksen, da vi skriver "Kræver backend" */
-    .stat-card .small-text { font-size: 16px; color: #FFD166; padding-top: 10px; }
 
     /* Table */
     .controls { display: flex; gap: 10px; margin-bottom: 20px; }
@@ -68,7 +66,7 @@
         <div class="stat-card"><h3>Brugere i alt</h3><p id="stat-users">...</p></div>
         <div class="stat-card"><h3>Familier oprettet</h3><p id="stat-families">...</p></div>
         <div class="stat-card"><h3>Medlemmer (Børn)</h3><p id="stat-members">...</p></div>
-        <div class="stat-card"><h3>Gæstebrugere (Auth)</h3><p id="stat-guests" class="small-text">...</p></div>
+        <div class="stat-card"><h3>Gæstebrugere (Auth)</h3><p id="stat-guests">...</p></div>
         <div class="stat-card"><h3>Belønninger</h3><p id="stat-rewards">...</p></div>
         <div class="stat-card"><h3>Opgaver i alt</h3><p id="stat-tasks">...</p></div>
       </div>
@@ -184,9 +182,9 @@
         document.getElementById('stat-tasks').innerText = tasksCount.data().count;
 
         // VIGTIGT VEDR. GÆSTEBRUGERE:
-        // Client SDK (Web) kan ikke hente antal Auth-brugere af sikkerhedshensyn.
-        // Det kræver en Cloud Function via Firebase Admin SDK.
-        document.getElementById('stat-guests').innerText = "Kræver backend";
+        // Vi bruger 'membersCount' tallet her, da alle anonyme brugere oprettes som medlemmer.
+        // Det giver os et meget præcist estimat uden at kræve en Backend Cloud Function.
+        document.getElementById('stat-guests').innerText = membersCount.data().count;
 
         loadUsers();
       } catch (error) {
@@ -317,7 +315,6 @@
       }
     };
 
-    // --- OPDATERET MODAL: Viser nu kun selve brugeroplysningerne ---
     window.openUserModal = (uid) => {
       const u = window.allUsersData.find(user => user.id === uid);
       if(!u) return;
@@ -328,7 +325,6 @@
         ? `<span class="status-locked">LÅST</span>` 
         : `<span class="status-active">Aktiv</span>`;
 
-      // Formater eventuel låse-dato
       let lockedInfo = "";
       if (isBlocked && u.lockedAt) {
         const date = new Date(u.lockedAt.seconds * 1000);
@@ -367,12 +363,10 @@
       userModal.classList.remove('hidden');
     };
 
-    // Luk Modal
     document.getElementById('close-modal').addEventListener('click', () => {
       userModal.classList.add('hidden');
     });
     
-    // Luk modal hvis man klikker uden for kassen
     window.onclick = function(event) {
       if (event.target == userModal) {
         userModal.classList.add('hidden');
