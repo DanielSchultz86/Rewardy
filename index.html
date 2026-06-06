@@ -66,7 +66,6 @@
         <div class="stat-card"><h3>Brugere i alt</h3><p id="stat-users">...</p></div>
         <div class="stat-card"><h3>Familier oprettet</h3><p id="stat-families">...</p></div>
         <div class="stat-card"><h3>Medlemmer (Børn)</h3><p id="stat-members">...</p></div>
-        <div class="stat-card"><h3>Gæstebrugere (Auth)</h3><p id="stat-guests">...</p></div>
         <div class="stat-card"><h3>Belønninger</h3><p id="stat-rewards">...</p></div>
         <div class="stat-card"><h3>Opgaver i alt</h3><p id="stat-tasks">...</p></div>
       </div>
@@ -171,9 +170,6 @@
 
         const familiesCount = await getCountFromServer(collection(db, 'families'));
         document.getElementById('stat-families').innerText = familiesCount.data().count;
-
-        const membersCount = await getCountFromServer(collection(db, 'members'));
-        document.getElementById('stat-members').innerText = membersCount.data().count;
 
         const rewardsCount = await getCountFromServer(collectionGroup(db, 'rewards'));
         document.getElementById('stat-rewards').innerText = rewardsCount.data().count;
