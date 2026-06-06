@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:firebase_auth/firebase_auth.dart'; 
 import 'opret_familie_screen.dart';
-import 'profil_screen.dart'; // <- Her er den korrekte import!
+import 'profil_screen.dart'; 
 import 'dashboard_screen.dart'; 
 import 'medlemmer_screen.dart'; 
 import '../widgets/app_drawer.dart';
@@ -62,7 +62,6 @@ class ForsideScreen extends StatelessWidget {
                         const SizedBox(height: 40),
 
                         // VI SAMLER KNAPPERNE I STREAM BUILDEREN
-                        // Så vi kan tjekke om der findes en familie, før vi viser menuen
                         if (currentUserId != null)
                           StreamBuilder<QuerySnapshot>(
                             stream: FirebaseFirestore.instance
@@ -71,6 +70,15 @@ class ForsideScreen extends StatelessWidget {
                                 .limit(4)
                                 .snapshots(),
                             builder: (context, snapshot) {
+                              
+                              // --- OPKLARET FEJL HÅNDTERING ---
+                              if (snapshot.hasError) {
+                                debugPrint("Forside Error: ${snapshot.error}");
+                                return const Center(
+                                  child: Text('Kunne ikke hente familier', style: TextStyle(color: Colors.redAccent)),
+                                ); 
+                              }
+
                               if (snapshot.connectionState == ConnectionState.waiting) {
                                 return const Padding(
                                   padding: EdgeInsets.only(bottom: 16.0),

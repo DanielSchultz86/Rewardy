@@ -89,9 +89,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 child: StreamBuilder<QuerySnapshot>(
                   stream: _rewardsStream, 
                   builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Center(child: Text('Der opstod en fejl: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent)));
-                    }
+                   if (snapshot.hasError) {
+  // Brugeren er sandsynligvis lige blevet logget ud/låst. 
+  // Vis ingenting, mens AuthGate sender dem til login-skærmen.
+  return const SizedBox.shrink(); 
+}
 
                     if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
                       return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)));

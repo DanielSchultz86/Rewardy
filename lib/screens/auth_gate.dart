@@ -41,15 +41,49 @@ class AuthGate extends StatelessWidget {
                   .doc(user.uid)
                   .snapshots(),
               builder: (context, userSnapshot) {
+                
+                // --- HÅNDTERING AF FIREBASE PERMISSION ERRORS ---
+                if (userSnapshot.hasError) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) async {
+                    if (Navigator.canPop(context)) {
+                      Navigator.popUntil(context, (route) => route.isFirst);
+                    }
+                    await Hive.box('authBox').delete('userType');
+                    await FirebaseAuth.instance.signOut();
+                  });
+                  return const Scaffold(backgroundColor: Color(0xFF121214));
+                }
+
                 // 1. TJEK FOR LÅS FØR VI GØR ANDET
                 if (userSnapshot.hasData && userSnapshot.data!.exists) {
-                  final userData =
-                      userSnapshot.data!.data() as Map<String, dynamic>?;
+                  final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                  
+                  // NYT: Spørger vi cachen eller live-serveren?
+                  final isFromCache = userSnapshot.data!.metadata.isFromCache; 
 
-                  if (userData != null &&
-                      (userData['isBlocked'] ?? false) == true) {
-                    // Brugeren er låst - ryd op og send til login via signOut
+                  if (userData != null && (userData['isBlocked'] ?? false) == true) {
+                    
+                    // --- CACHE-LØSNINGEN ---
+                    // Hvis telefonens hukommelse tror vi er låst, venter vi lige
+                    // på at serveren svarer, før vi smider brugeren ud!
+                    if (isFromCache) {
+                      return const Scaffold(
+                        backgroundColor: Color(0xFF121214),
+                        body: Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFFFF6B35),
+                          ),
+                        ),
+                      );
+                    }
+                    // -----------------------
+                        
                     WidgetsBinding.instance.addPostFrameCallback((_) async {
+                      // Fej alle skærme væk
+                      if (Navigator.canPop(context)) {
+                        Navigator.popUntil(context, (route) => route.isFirst);
+                      }
+                      
                       await Hive.box('authBox').delete('userType');
                       await FirebaseAuth.instance.signOut();
                     });

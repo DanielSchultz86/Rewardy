@@ -31,7 +31,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   final TextEditingController _taskNameCtrl = TextEditingController();
   final TextEditingController _taskDescCtrl = TextEditingController();
   bool _isMandatory = false;
-  int _taskRepetitions = 1;
   List<String> _selectedMembers = [];
 
   // --- MATEMATIK DATA ---
@@ -45,7 +44,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
   String _initTaskName = '';
   String _initTaskDesc = '';
   bool _initIsMandatory = false;
-  int _initTaskRepetitions = 1;
   List<String> _initSelectedMembers = [];
   bool _initIsMathTask = false;
 
@@ -69,14 +67,12 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
       _initTaskName = data['navn'] ?? '';
       _initTaskDesc = data['beskrivelse'] ?? '';
       _initIsMandatory = data['erMandatory'] ?? false;
-      _initTaskRepetitions = data['antalGange'] ?? 1;
       _initSelectedMembers = [data['medlemId']];
       _initIsMathTask = data['isMathTask'] ?? false;
 
       _taskNameCtrl.text = _initTaskName;
       _taskDescCtrl.text = _initTaskDesc;
       _isMandatory = _initIsMandatory;
-      _taskRepetitions = _initTaskRepetitions;
       _selectedMembers = List.from(_initSelectedMembers); 
       _isMathTask = _initIsMathTask;
 
@@ -171,7 +167,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
     bool taskChanged = _taskNameCtrl.text.trim() != _initTaskName ||
                        _taskDescCtrl.text.trim() != _initTaskDesc ||
                        _isMandatory != _initIsMandatory ||
-                       _taskRepetitions != _initTaskRepetitions ||
                        _isMathTask != _initIsMathTask ||
                        currentMembers != initialMembers;
 
@@ -215,7 +210,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         initTaskName: _taskNameCtrl.text.trim(),
         initTaskDesc: _taskDescCtrl.text.trim(),
         initIsMandatory: _isMandatory,
-        initTaskRepetitions: _taskRepetitions,
       ),
     );
   }
@@ -287,7 +281,7 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
         'navn': _taskNameCtrl.text.trim(),
         'beskrivelse': _taskDescCtrl.text.trim(),
         'erMandatory': _isMandatory,
-        'antalGange': _isMathTask ? 1 : _taskRepetitions, // Matematik tæller altid som 1 stor opgave
+        'antalGange': 1, // ALTD SÆT TIL 1 FREMOVER
         'isMathTask': _isMathTask,
         if (_isMathTask) 'mathLevel': _mathLevel,
         if (_isMathTask) 'mathProblemCount': _mathProblemCount,
@@ -570,45 +564,6 @@ class _OpretBelonningPopupState extends State<OpretBelonningPopup> {
                 onChanged: (val) => setState(() => _isMandatory = val),
               ),
             ],
-          ),
-          
-          const SizedBox(height: 24),
-          Opacity(
-            opacity: _isMathTask ? 0.3 : 1.0,
-            child: IgnorePointer(
-              ignoring: _isMathTask,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildLabel('Antal gange'),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFF6B35), width: 1.5),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.remove, color: Colors.black),
-                          onPressed: () {
-                            if (_taskRepetitions > 1) setState(() => _taskRepetitions--);
-                          },
-                        ),
-                        Text('$_taskRepetitions', style: const TextStyle(color: Colors.black, fontSize: 18, fontWeight: FontWeight.bold)),
-                        IconButton(
-                          icon: const Icon(Icons.add, color: Colors.black),
-                          onPressed: () {
-                            if (_taskRepetitions < 7) setState(() => _taskRepetitions++);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ),
 
           const SizedBox(height: 24),
@@ -953,7 +908,7 @@ class _KopierBelonningSheetState extends State<KopierBelonningSheet> {
             'navn': name,
             'beskrivelse': data['beskrivelse'] ?? '',
             'erMandatory': data['erMandatory'] ?? false,
-            'antalGange': data['antalGange'] ?? 1,
+            'antalGange': 1, // TVUNGET TIL 1
           });
           
           // Auto-vælg opgaven, hvis den lå i den oprindelige belønning vi trykkede 'kopier' på
@@ -1005,7 +960,7 @@ class _KopierBelonningSheetState extends State<KopierBelonningSheet> {
             'navn': tObj['navn'],
             'beskrivelse': tObj['beskrivelse'],
             'erMandatory': tObj['erMandatory'],
-            'antalGange': tObj['antalGange'],
+            'antalGange': 1, // ALTD SÆT TIL 1 FREMOVER
             'udfoertGange': 0,
             'medlemId': memId,
             'createdAt': FieldValue.serverTimestamp(),
@@ -1208,14 +1163,13 @@ class _KopierBelonningSheetState extends State<KopierBelonningSheet> {
 }
 
 // ==============================================================================
-// BUND-SHEET TIL "KOPIER OPGAVE" (DEN OPRINDELIGE - URØRT)
+// BUND-SHEET TIL "KOPIER OPGAVE"
 // ==============================================================================
 class KopierOpgaveSheet extends StatefulWidget {
   final String familyId;
   final String initTaskName;
   final String initTaskDesc;
   final bool initIsMandatory;
-  final int initTaskRepetitions;
 
   const KopierOpgaveSheet({
     super.key,
@@ -1223,7 +1177,6 @@ class KopierOpgaveSheet extends StatefulWidget {
     required this.initTaskName,
     required this.initTaskDesc,
     required this.initIsMandatory,
-    required this.initTaskRepetitions,
   });
 
   @override
@@ -1369,7 +1322,7 @@ class _KopierOpgaveSheetState extends State<KopierOpgaveSheet> {
           'navn': _nameCtrl.text.trim(),
           'beskrivelse': _descCtrl.text.trim(),
           'erMandatory': widget.initIsMandatory,
-          'antalGange': widget.initTaskRepetitions,
+          'antalGange': 1, // ALTD SÆT TIL 1 FREMOVER
           'udfoertGange': 0,
           'medlemId': memId,
           'createdAt': FieldValue.serverTimestamp(),
