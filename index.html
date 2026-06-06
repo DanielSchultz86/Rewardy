@@ -171,16 +171,14 @@
         const familiesCount = await getCountFromServer(collection(db, 'families'));
         document.getElementById('stat-families').innerText = familiesCount.data().count;
 
+        const membersCount = await getCountFromServer(collection(db, 'members'));
+        document.getElementById('stat-members').innerText = membersCount.data().count;
+
         const rewardsCount = await getCountFromServer(collectionGroup(db, 'rewards'));
         document.getElementById('stat-rewards').innerText = rewardsCount.data().count;
 
         const tasksCount = await getCountFromServer(collectionGroup(db, 'tasks'));
         document.getElementById('stat-tasks').innerText = tasksCount.data().count;
-
-        // VIGTIGT VEDR. GÆSTEBRUGERE:
-        // Vi bruger 'membersCount' tallet her, da alle anonyme brugere oprettes som medlemmer.
-        // Det giver os et meget præcist estimat uden at kræve en Backend Cloud Function.
-        document.getElementById('stat-guests').innerText = membersCount.data().count;
 
         loadUsers();
       } catch (error) {
