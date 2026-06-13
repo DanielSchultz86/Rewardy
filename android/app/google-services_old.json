@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "929026684024",
+    "project_id": "rewardy-b7efa",
+    "storage_bucket": "rewardy-b7efa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:929026684024:android:d0809528d5d4a1bb3d298d",
+        "android_client_info": {
+          "package_name": "com.dals.rewardy"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATg92lId9sVAXTHVk5e07G4Nopz4vzBww"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
