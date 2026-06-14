@@ -92,7 +92,7 @@ class ForsideScreen extends StatelessWidget {
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  // 1. DYNAMISKE FAMILIE-KNAPPER (Nu med max 4!)
+                                  // 1. DYNAMISKE FAMILIE-KNAPPER
                                   ...families.map((doc) {
                                     final familyName = doc['name'] ?? 'Ukendt familie';
                                     return Padding(
@@ -156,6 +156,14 @@ class ForsideScreen extends StatelessWidget {
                                       );
                                     },
                                   ),
+                                  const SizedBox(height: 16),
+
+                                  // 5. HJÆLP / SÅDAN VIRKER APPEN (NY KNAP)
+                                  _buildMenuButton(
+                                    icon: Icons.help_outline,
+                                    text: 'Sådan virker Rewardy',
+                                    onTap: () => _showHelpDialog(context),
+                                  ),
                                   
                                   const SizedBox(height: 24),
                                 ],
@@ -171,6 +179,80 @@ class ForsideScreen extends StatelessWidget {
           },
         ),
       ),
+    );
+  }
+
+  // --- POPUP DIALOG TIL HJÆLP ---
+  void _showHelpDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF2A2A30), // Matcher dit knap-design
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Kom godt i gang',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHelpStep('1', 'Opret din familie', 'Start med at oprette et fælles samlingspunkt.'),
+                const SizedBox(height: 16),
+                _buildHelpStep('2', 'Tilføj medlemmer', 'Opret profiler til dem, der skal løse opgaver.'),
+                const SizedBox(height: 16),
+                _buildHelpStep('3', 'Lav opgaver & belønninger', 'Opsæt de daglige pligter og definer, hvad der kan spares op til.'),
+                const SizedBox(height: 16),
+                _buildHelpStep('4', 'Log ind og optjen', 'Giv medlemmerne deres personlige login. Nu kan de krydse opgaver af og optjene belønninger!'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Forstået',
+                style: TextStyle(color: Color(0xFFFF6B35), fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // --- HJÆLPE-WIDGET TIL POPUP TRIN ---
+  Widget _buildHelpStep(String stepNumber, String title, String description) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 14,
+          backgroundColor: const Color(0xFFFF6B35),
+          child: Text(
+            stepNumber,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                description,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
